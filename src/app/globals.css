@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background-color: #fbf4e8; /* cream */
+  color: #3a1a0e; /* espresso */
+}
+
+/* Subtle warm focus ring matching the brand */
+*:focus-visible {
+  outline: 2px solid #d85a30;
+  outline-offset: 2px;
+}

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" fill="none" role="img" aria-label="SC Pronto">
+  <defs>
+    <linearGradient id="knot" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8743F"/>
+      <stop offset="1" stop-color="#A8451F"/>
+    </linearGradient>
+  </defs>
+  <!-- Flat trefoil-knot stand-in. Replace /public/logo.png with the 3D render. -->
+  <path d="M120 36
+           C 168 36, 196 80, 168 120
+           C 196 160, 168 204, 120 204
+           C 72 204, 44 160, 72 120
+           C 44 80, 72 36, 120 36 Z
+           M120 78
+           C 96 78, 84 100, 100 120
+           C 84 140, 96 162, 120 162
+           C 144 162, 156 140, 140 120
+           C 156 100, 144 78, 120 78 Z"
+        fill="url(#knot)" fill-rule="evenodd"/>
+</svg>
