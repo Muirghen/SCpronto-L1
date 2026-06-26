@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Header } from "@/components/Header";
+import { AppIcon } from "@/components/AppIcon";
 import { Field, Button } from "@/components/ui";
 import type { AppTile, Profile } from "@/lib/types";
 import {
@@ -171,7 +172,9 @@ export default async function AdminPage() {
                     key={app.id}
                     className="flex items-center gap-4 rounded-card border border-tan/40 bg-white/70 p-4"
                   >
-                    <span className="text-2xl">{app.icon_emoji}</span>
+                    <span className="flex h-8 w-8 items-center justify-center text-2xl">
+                      <AppIcon app={app} imgClassName="h-6 w-6 object-contain" />
+                    </span>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-espresso">{app.name}</p>
                       <p className="truncate text-sm text-espresso/60">
@@ -203,6 +206,11 @@ export default async function AdminPage() {
                 label="Description"
                 name="description"
                 placeholder="Shared company files"
+              />
+              <Field
+                label="Icon image URL (optional, overrides emoji)"
+                name="icon_url"
+                placeholder="/icons/figma.svg"
               />
               <div className="grid grid-cols-[80px_1fr] gap-3">
                 <Field label="Icon" name="icon_emoji" placeholder="📁" />

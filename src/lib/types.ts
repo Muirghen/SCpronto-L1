@@ -17,6 +17,7 @@ export type AppTile = {
   description: string | null;
   url: string | null;
   icon_emoji: string | null;
+  icon_url: string | null;
   kind: AppKind;
   sort_order: number;
   created_at: string;

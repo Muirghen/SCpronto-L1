@@ -78,6 +78,7 @@ export async function createApp(formData: FormData) {
     description: String(formData.get("description") ?? "").trim() || null,
     url,
     icon_emoji: String(formData.get("icon_emoji") ?? "").trim() || "🔗",
+    icon_url: String(formData.get("icon_url") ?? "").trim() || null,
     kind,
     sort_order: Number(formData.get("sort_order") ?? 0) || 0,
   });

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Header } from "@/components/Header";
+import { AppIcon } from "@/components/AppIcon";
 import type { AppTile, Profile } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +85,7 @@ function AppCard({ app }: { app: AppTile }) {
   const inner = (
     <div className="group flex h-full flex-col rounded-card border border-tan/40 bg-white/80 p-5 transition hover:-translate-y-0.5 hover:border-logo/60 hover:shadow-md">
       <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-cream text-2xl">
-        {app.icon_emoji ?? "🔗"}
+        <AppIcon app={app} />
       </div>
       <h3 className="font-serif text-lg font-semibold text-espresso">
         {app.name}

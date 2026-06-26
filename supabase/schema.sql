@@ -40,10 +40,14 @@ create table if not exists public.apps (
   description text,
   url         text,                       -- used when kind = 'link'
   icon_emoji  text default '🔗',
+  icon_url    text,                       -- optional image icon; overrides emoji
   kind        app_kind not null default 'link',
   sort_order  int not null default 0,
   created_at  timestamptz not null default now()
 );
+
+-- Backfill the icon_url column on databases created before it existed.
+alter table public.apps add column if not exists icon_url text;
 
 -- ---------------------------------------------------------------------
 -- Helper: is the current user an admin?  (security definer avoids
