@@ -37,11 +37,15 @@ export function Header({
           <Logo size={32} withWordmark />
         </Link>
 
-        <nav className="no-scrollbar flex max-w-full items-center gap-0.5 overflow-x-auto text-sm sm:gap-1">
-          {link("/apps", "My Library", "library")}
-          {link("/browse", "Browse", "browse")}
-          {link("/studio", "Studio", "studio")}
-          {isAdmin && link("/admin", "Admin", "admin")}
+        {/* The link list scrolls on narrow screens; the bell/profile/sign-out
+            sit OUTSIDE that overflow so the bell's dropdown isn't clipped. */}
+        <nav className="flex min-w-0 items-center gap-1 text-sm">
+          <div className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto sm:gap-1">
+            {link("/apps", "My Library", "library")}
+            {link("/browse", "Browse", "browse")}
+            {link("/studio", "Studio", "studio")}
+            {isAdmin && link("/admin", "Admin", "admin")}
+          </div>
 
           <span className="mx-1 hidden h-5 w-px bg-tan/30 sm:inline-block" />
 
