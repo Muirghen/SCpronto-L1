@@ -674,37 +674,39 @@ export function StudioEditor({
       {/* ---- body: left | canvas | right ---- */}
       <div className="relative flex min-h-0 flex-1">
         {/* left rail: templates, layers, files */}
-        <CollapsibleRail side="left" items={[{ symbol: "▦", label: "Templates" }, { symbol: "≣", label: "Layers" }, { symbol: "🗂", label: "Files" }]}>
-          <Section title="Templates">
-            <div className="grid grid-cols-2 gap-1.5">
-              {STARTERS.map((s) => (
-                <button key={s.key} onClick={() => applyStarter(s)}
-                  className="rounded border border-tan/40 px-1.5 py-1.5 text-[11px] font-medium text-espresso/80 transition hover:border-logo hover:bg-logo/5">
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </Section>
-
-          <Section title="Layers">
-            {layers.length === 0 ? (
-              <p className="text-[11px] text-tan">Add something to see layers.</p>
-            ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onLayersReorder}>
-                <SortableContext items={layers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="space-y-1">
-                    {layers.map((l) => (
-                      <LayerRow key={l.id} layer={l}
-                        onSelect={() => selectLayer(l.id)}
-                        onToggle={() => toggleVisible(l.id)} />
-                    ))}
-                  </ul>
-                </SortableContext>
-              </DndContext>
-            )}
-          </Section>
-
-          {(owned.length > 0 || sharedWithMe.length > 0) && (
+        <CollapsibleRail side="left" items={[
+          { symbol: "▦", label: "Templates", content: (
+            <Section title="Templates">
+              <div className="grid grid-cols-2 gap-1.5">
+                {STARTERS.map((s) => (
+                  <button key={s.key} onClick={() => applyStarter(s)}
+                    className="rounded border border-tan/40 px-1.5 py-1.5 text-[11px] font-medium text-espresso/80 transition hover:border-logo hover:bg-logo/5">
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </Section>
+          ) },
+          { symbol: "≣", label: "Layers", content: (
+            <Section title="Layers">
+              {layers.length === 0 ? (
+                <p className="text-[11px] text-tan">Add something to see layers.</p>
+              ) : (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onLayersReorder}>
+                  <SortableContext items={layers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
+                    <ul className="space-y-1">
+                      {layers.map((l) => (
+                        <LayerRow key={l.id} layer={l}
+                          onSelect={() => selectLayer(l.id)}
+                          onToggle={() => toggleVisible(l.id)} />
+                      ))}
+                    </ul>
+                  </SortableContext>
+                </DndContext>
+              )}
+            </Section>
+          ) },
+          ...(owned.length > 0 || sharedWithMe.length > 0 ? [{ symbol: "🗂", label: "Files", content: (
             <Section title="My files">
               <ul className="space-y-1">
                 {owned.map((d) => (
@@ -745,8 +747,8 @@ export function StudioEditor({
                 ))}
               </ul>
             </Section>
-          )}
-        </CollapsibleRail>
+          ) }] : []),
+        ]} />
 
         {/* center workspace */}
         <div ref={workspaceRef} onMouseDown={onWorkspaceMouseDown}
@@ -772,30 +774,31 @@ export function StudioEditor({
         </div>
 
         {/* right rail: add + properties + canvas */}
-        <CollapsibleRail side="right" items={[{ symbol: "＋", label: "Add" }, { symbol: "⚙", label: "Properties" }, { symbol: "🎨", label: "Canvas" }]}>
-          <Section title="Add">
-            <div className="grid grid-cols-3 gap-1.5">
-              <ToolButton onClick={addText}>＋ Text</ToolButton>
-              <ToolButton onClick={addLogo}>＋ Logo</ToolButton>
-              <label className="flex cursor-pointer items-center justify-center rounded-lg bg-espresso px-2 py-1.5 text-xs font-semibold text-cream transition hover:bg-espresso/90">
-                ＋ Img
-                <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
-              </label>
-            </div>
-            <div className="mt-1.5 grid grid-cols-5 gap-1">
-              {([["▭", "rect"], ["◯", "circle"], ["△", "triangle"], ["★", "star"], ["—", "line"]] as const).map(([icon, kind]) => (
-                <button key={kind} title={`Add ${kind}`} onClick={() => addShape(kind)}
-                  className="rounded border border-tan/50 py-1.5 text-espresso/70 transition hover:border-logo hover:bg-logo/5">{icon}</button>
-              ))}
-            </div>
-            <div className="mt-1.5 flex flex-wrap gap-0.5">
-              {STICKERS.map((s) => (
-                <button key={s} onClick={() => addSticker(s)} className="rounded px-1 py-0.5 text-base transition hover:scale-110 hover:bg-tan/10">{s}</button>
-              ))}
-            </div>
-          </Section>
-
-          {selKind && (
+        <CollapsibleRail side="right" items={[
+          { symbol: "＋", label: "Add", content: (
+            <Section title="Add">
+              <div className="grid grid-cols-3 gap-1.5">
+                <ToolButton onClick={addText}>＋ Text</ToolButton>
+                <ToolButton onClick={addLogo}>＋ Logo</ToolButton>
+                <label className="flex cursor-pointer items-center justify-center rounded-lg bg-espresso px-2 py-1.5 text-xs font-semibold text-cream transition hover:bg-espresso/90">
+                  ＋ Img
+                  <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
+                </label>
+              </div>
+              <div className="mt-1.5 grid grid-cols-5 gap-1">
+                {([["▭", "rect"], ["◯", "circle"], ["△", "triangle"], ["★", "star"], ["—", "line"]] as const).map(([icon, kind]) => (
+                  <button key={kind} title={`Add ${kind}`} onClick={() => addShape(kind)}
+                    className="rounded border border-tan/50 py-1.5 text-espresso/70 transition hover:border-logo hover:bg-logo/5">{icon}</button>
+                ))}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-0.5">
+                {STICKERS.map((s) => (
+                  <button key={s} onClick={() => addSticker(s)} className="rounded px-1 py-0.5 text-base transition hover:scale-110 hover:bg-tan/10">{s}</button>
+                ))}
+              </div>
+            </Section>
+          ) },
+          ...(selKind ? [{ symbol: "⚙", label: "Properties", content: (
             <Section title="Properties">
               {selKind === "text" && (
                 <div className="space-y-2.5">
@@ -839,13 +842,14 @@ export function StudioEditor({
                   className="rounded-lg border border-logo/40 px-2 py-1.5 text-xs font-semibold text-orange-light hover:bg-logo/10">Delete</button>
               </div>
             </Section>
-          )}
-
-          <Section title="Canvas">
-            <span className="mb-1 block text-[11px] font-medium text-espresso/70">Background</span>
-            <Swatches value={bgColor} onPick={setBackground} extra={customColors} onAdd={addCustomColor} />
-          </Section>
-        </CollapsibleRail>
+          ) }] : []),
+          { symbol: "🎨", label: "Canvas", content: (
+            <Section title="Canvas">
+              <span className="mb-1 block text-[11px] font-medium text-espresso/70">Background</span>
+              <Swatches value={bgColor} onPick={setBackground} extra={customColors} onAdd={addCustomColor} />
+            </Section>
+          ) },
+        ]} />
       </div>
     </div>
   );
@@ -887,33 +891,34 @@ function LayerRow({
   );
 }
 
-// A thin icon rail that expands into a flyout panel on hover.
+// A thin icon rail; hovering each icon opens its own flyout panel.
 function CollapsibleRail({
-  side, items, children,
+  side, items,
 }: {
   side: "left" | "right";
-  items: { symbol: string; label: string }[];
-  children: React.ReactNode;
+  items: { symbol: string; label: string; content: React.ReactNode }[];
 }) {
   return (
     <aside
-      className={`group relative z-20 flex w-12 shrink-0 flex-col items-center gap-1 ${
+      className={`relative z-20 flex w-12 shrink-0 flex-col items-center gap-1 ${
         side === "left" ? "border-r" : "border-l"
       } border-tan/30 bg-cream/85 py-3`}
     >
       {items.map((it) => (
-        <div key={it.label} title={it.label}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-base text-espresso/70 transition group-hover:bg-tan/10">
-          {it.symbol}
+        <div key={it.label} className="group/item relative">
+          <button title={it.label}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-base text-espresso/70 transition hover:bg-tan/15 group-hover/item:bg-tan/15">
+            {it.symbol}
+          </button>
+          <div
+            className={`absolute top-0 z-30 max-h-[82vh] w-60 overflow-y-auto rounded-md border border-tan/30 bg-cream/95 opacity-0 shadow-xl transition-all duration-200 pointer-events-none group-hover/item:translate-x-0 group-hover/item:opacity-100 group-hover/item:pointer-events-auto ${
+              side === "left" ? "left-11 -translate-x-2" : "right-11 translate-x-2"
+            }`}
+          >
+            {it.content}
+          </div>
         </div>
       ))}
-      <div
-        className={`absolute top-0 h-full w-60 overflow-y-auto border-tan/30 bg-cream/95 opacity-0 shadow-xl backdrop-blur transition-all duration-200 pointer-events-none group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto ${
-          side === "left" ? "left-12 -translate-x-3 border-r" : "right-12 translate-x-3 border-l"
-        }`}
-      >
-        {children}
-      </div>
     </aside>
   );
 }
