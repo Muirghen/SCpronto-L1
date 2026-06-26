@@ -1,8 +1,12 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { Design } from "@/lib/types";
+
+const IMAGE_BUCKET = "design-images";
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 async function requireUser() {
   const supabase = createClient();
@@ -41,6 +45,38 @@ export async function saveDesign(input: {
 
   revalidatePath("/studio");
   return data;
+}
+
+/**
+ * Upload an image to the public design-images bucket and return its URL.
+ * Stored under the user's own folder so RLS limits writes to that user.
+ */
+export async function uploadDesignImage(
+  form: FormData,
+): Promise<{ url: string }> {
+  const { supabase, userId } = await requireUser();
+
+  const file = form.get("file");
+  if (!(file instanceof File)) throw new Error("No image provided.");
+  if (!file.type.startsWith("image/")) {
+    throw new Error("That file isn't an image.");
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error("Image is too large (max 10 MB).");
+  }
+
+  const ext =
+    (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") ||
+    "png";
+  const path = `${userId}/${randomUUID()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+  return { url: data.publicUrl };
 }
 
 /** Replace the set of users a design is shared with (owner only). */

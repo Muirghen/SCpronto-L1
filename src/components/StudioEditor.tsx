@@ -18,7 +18,7 @@ import {
   FORMATS, PALETTE, FONTS, STICKERS, STARTERS,
   GOOGLE_FONTS_HREF, type FormatKey, type Starter,
 } from "@/lib/studio/templates";
-import { saveDesign, deleteDesign, shareDesign } from "@/app/studio/actions";
+import { saveDesign, deleteDesign, shareDesign, uploadDesignImage } from "@/app/studio/actions";
 
 const MAX_W = 520;
 const MAX_H = 560;
@@ -85,6 +85,8 @@ export function StudioEditor({
   // True once Fabric has finished initializing the canvas.
   const [ready, setReady] = useState(false);
   const openedRef = useRef(false);
+  // True while an image upload is in flight (bottom-bar button feedback).
+  const [uploadingImg, setUploadingImg] = useState(false);
 
   // design_id -> set of user ids it's shared with (owned designs only).
   const [shares, setShares] = useState<Record<string, string[]>>(() => {
@@ -492,21 +494,31 @@ export function StudioEditor({
     add(img);
   }
 
-  function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  // Upload the picked file to Supabase Storage, then drop the image (by URL)
+  // onto the canvas. Keeps design JSON small — no base64 blobs.
+  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
+    setTool("select");
+    setUploadingImg(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { url } = await uploadDesignImage(form);
       const fabric = modRef.current, canvas = fabricRef.current;
       if (!fabric || !canvas) return;
-      const img = await fabric.FabricImage.fromURL(String(reader.result));
+      const img = await fabric.FabricImage.fromURL(url, { crossOrigin: "anonymous" });
       const target = canvas.getWidth() * 0.6;
       img.scale(target / (img.width ?? target));
       img.set(center());
       add(img);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
+    } catch (err) {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Couldn't upload the image.");
+    } finally {
+      setUploadingImg(false);
+    }
   }
 
   function addShape(kind: "rect" | "circle" | "triangle" | "line" | "star") {
@@ -1026,6 +1038,24 @@ export function StudioEditor({
         <div className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
           <ToolBarButton icon="cursor" label="Select (V)" active={tool === "select"} onClick={() => setTool("select")} />
           <ToolBarButton icon="text" label="Text — drag to draw (T)" active={tool === "text"} onClick={() => setTool("text")} />
+          <span className="mx-0.5 h-6 w-px bg-tan/30" />
+          <label
+            title={uploadingImg ? "Uploading…" : "Add image"}
+            aria-label="Add image"
+            aria-busy={uploadingImg}
+            className={`flex h-11 w-11 cursor-pointer items-center justify-center rounded-xl transition ${
+              uploadingImg
+                ? "cursor-wait text-tan"
+                : "text-espresso/70 hover:bg-tan/20 hover:text-espresso"
+            }`}
+          >
+            {uploadingImg ? (
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-tan/40 border-t-logo" />
+            ) : (
+              <Icon name="image" size={22} />
+            )}
+            <input type="file" accept="image/*" className="hidden" onChange={onUpload} disabled={uploadingImg} />
+          </label>
         </div>
       </div>
     </div>
