@@ -9,7 +9,7 @@ export function Header({
 }: {
   isAdmin: boolean;
   email: string;
-  active: "library" | "browse" | "admin";
+  active: "library" | "browse" | "admin" | "studio";
 }) {
   return (
     <header className="border-b border-tan/30 bg-cream/80 backdrop-blur">
@@ -38,6 +38,16 @@ export function Header({
             }`}
           >
             Browse
+          </Link>
+          <Link
+            href="/studio"
+            className={`rounded-lg px-3 py-1.5 font-medium ${
+              active === "studio"
+                ? "bg-espresso text-cream"
+                : "text-espresso/70 hover:bg-tan/10"
+            }`}
+          >
+            Studio
           </Link>
           {isAdmin && (
             <Link
