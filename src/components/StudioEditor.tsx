@@ -83,6 +83,23 @@ export function StudioEditor({
   });
   const [shareOpen, setShareOpen] = useState<string | null>(null);
 
+  // Custom colors the user adds via the “+” swatch, kept across sessions.
+  const [customColors, setCustomColors] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("scpronto-studio-colors");
+      if (raw) setCustomColors(JSON.parse(raw));
+    } catch { /* ignore */ }
+  }, []);
+  function addCustomColor(c: string) {
+    setCustomColors((prev) => {
+      if (prev.includes(c) || PALETTE.includes(c.toUpperCase())) return prev;
+      const next = [...prev, c].slice(-14);
+      try { localStorage.setItem("scpronto-studio-colors", JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
   const peopleById = useMemo(() => {
     const m: Record<string, Person> = {};
     for (const p of people) m[p.id] = p;
@@ -582,7 +599,7 @@ export function StudioEditor({
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       {/* ---- left controls ---- */}
-      <aside className="w-full shrink-0 space-y-6 lg:w-72">
+      <aside className="w-full shrink-0 space-y-5 rounded-card border border-tan/30 bg-white/50 p-4 lg:w-72">
         <div className="flex gap-2">
           <button onClick={undo} className="flex-1 rounded-lg border border-tan/50 px-3 py-2 text-sm font-medium text-espresso/70 hover:bg-tan/10">↶ Undo</button>
           <button onClick={redo} className="flex-1 rounded-lg border border-tan/50 px-3 py-2 text-sm font-medium text-espresso/70 hover:bg-tan/10">↷ Redo</button>
@@ -619,27 +636,27 @@ export function StudioEditor({
         </Section>
 
         <Section title="Background">
-          <Swatches value={bgColor} onPick={setBackground} />
-          <ColorInput value={bgColor} onChange={setBackground} />
+          <Swatches value={bgColor} onPick={setBackground} extra={customColors} onAdd={addCustomColor} />
         </Section>
 
         <Section title="Add">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <ToolButton onClick={addText}>＋ Text</ToolButton>
             <ToolButton onClick={addLogo}>＋ Logo</ToolButton>
-            <ToolButton onClick={() => addShape("rect")} variant="ghost">▭ Rect</ToolButton>
-            <ToolButton onClick={() => addShape("circle")} variant="ghost">◯ Circle</ToolButton>
-            <ToolButton onClick={() => addShape("triangle")} variant="ghost">△ Tri</ToolButton>
-            <ToolButton onClick={() => addShape("star")} variant="ghost">★ Star</ToolButton>
-            <ToolButton onClick={() => addShape("line")} variant="ghost">— Line</ToolButton>
-            <label className="cursor-pointer rounded-lg border border-tan/50 px-3 py-2 text-center text-sm font-semibold text-espresso/70 hover:bg-tan/10">
+            <label className="flex cursor-pointer items-center justify-center rounded-lg bg-espresso px-2 py-2 text-sm font-semibold text-cream transition hover:bg-espresso/90">
               ＋ Image
               <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
             </label>
           </div>
-          <div className="mt-2 flex flex-wrap gap-1">
+          <div className="mt-2 grid grid-cols-5 gap-1.5">
+            {([["▭", "rect"], ["◯", "circle"], ["△", "triangle"], ["★", "star"], ["—", "line"]] as const).map(([icon, kind]) => (
+              <button key={kind} title={`Add ${kind}`} onClick={() => addShape(kind)}
+                className="rounded-lg border border-tan/50 py-2 text-espresso/70 transition hover:border-logo hover:bg-logo/5">{icon}</button>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-0.5">
             {STICKERS.map((s) => (
-              <button key={s} onClick={() => addSticker(s)} className="rounded-md px-1.5 py-1 text-lg hover:bg-tan/10">{s}</button>
+              <button key={s} onClick={() => addSticker(s)} className="rounded-md px-1.5 py-1 text-lg transition hover:scale-110 hover:bg-tan/10">{s}</button>
             ))}
           </div>
         </Section>
@@ -668,12 +685,12 @@ export function StudioEditor({
                   <button onClick={() => updateText({ bold: !textProps.bold })}
                     className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-bold ${textProps.bold ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>B</button>
                 </div>
-                <Swatches value={textProps.fill} onPick={(c) => updateText({ fill: c })} />
-                <ColorInput value={textProps.fill} onChange={(c) => updateText({ fill: c })} />
+                <Swatches value={textProps.fill} onPick={(c) => updateText({ fill: c })} extra={customColors} onAdd={addCustomColor} />
               </div>
             )}
             {selKind === "shape" && (
-              <ShapeFill onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
+              <ShapeFill extra={customColors} onAdd={addCustomColor}
+                onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
             )}
             <label className="mt-3 block text-xs font-medium text-espresso/70">
               Opacity — {opacity}%
@@ -854,31 +871,41 @@ function ToolButton({ children, onClick, variant = "dark" }: {
   );
 }
 
-function Swatches({ value, onPick }: { value: string; onPick: (c: string) => void }) {
+function Swatches({
+  value, onPick, extra = [], onAdd,
+}: {
+  value: string; onPick: (c: string) => void;
+  extra?: string[]; onAdd?: (c: string) => void;
+}) {
   return (
     <div className="mt-1 flex flex-wrap gap-1.5">
-      {PALETTE.map((c) => (
-        <button key={c} onClick={() => onPick(c)} aria-label={`Use ${c}`}
-          className={`h-7 w-7 rounded-md border transition ${value.toLowerCase() === c.toLowerCase() ? "border-espresso ring-2 ring-espresso/30" : "border-tan/40"}`}
+      {[...PALETTE, ...extra].map((c, i) => (
+        <button key={c + i} onClick={() => onPick(c)} aria-label={`Use ${c}`}
+          className={`h-7 w-7 rounded-md border transition hover:scale-110 ${value.toLowerCase() === c.toLowerCase() ? "border-espresso ring-2 ring-espresso/30" : "border-tan/40"}`}
           style={{ backgroundColor: c }} />
       ))}
+      {onAdd && (
+        <label
+          title="Add a custom color"
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-dashed border-tan/60 text-base leading-none text-tan transition hover:border-logo hover:text-logo">
+          +
+          <input type="color" className="sr-only"
+            onChange={(e) => { onAdd(e.target.value); onPick(e.target.value); }} />
+        </label>
+      )}
     </div>
   );
 }
 
-function ShapeFill({ onPick }: { onPick: (c: string) => void }) {
+function ShapeFill({
+  onPick, extra, onAdd,
+}: {
+  onPick: (c: string) => void; extra?: string[]; onAdd?: (c: string) => void;
+}) {
   return (
     <div>
       <span className="text-xs font-medium text-espresso/70">Fill color</span>
-      <Swatches value="" onPick={onPick} />
-      <ColorInput value="#D85A30" onChange={onPick} />
+      <Swatches value="" onPick={onPick} extra={extra} onAdd={onAdd} />
     </div>
-  );
-}
-
-function ColorInput({ value, onChange }: { value: string; onChange: (c: string) => void }) {
-  return (
-    <input type="color" value={value} onChange={(e) => onChange(e.target.value)}
-      className="mt-2 h-8 w-full cursor-pointer rounded-md border border-tan/40 bg-white" aria-label="Custom color" />
   );
 }
