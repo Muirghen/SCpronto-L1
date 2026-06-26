@@ -84,7 +84,7 @@ export function LibraryGrid({ apps }: { apps: AppTile[] }) {
       onDragCancel={() => setActiveId(null)}
     >
       <SortableContext items={items.map((a) => a.id)} strategy={rectSortingStrategy}>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {items.map((app) => (
             <SortableCard key={app.id} app={app} onCardClick={onCardClick} />
           ))}
@@ -126,7 +126,7 @@ function SortableCard({
       <div
         ref={setNodeRef}
         style={style}
-        className="min-h-[112px] rounded-card border-2 border-dashed border-logo/40 bg-logo/5"
+        className="min-h-[150px] rounded-card border-2 border-dashed border-logo/40 bg-logo/5"
       />
     );
   }
@@ -154,19 +154,19 @@ function SortableCard({
 function CardFace({ app, dragging }: { app: AppTile; dragging?: boolean }) {
   return (
     <div
-      title={app.description ?? app.name}
-      className={`flex h-full min-h-[112px] flex-col items-center justify-center gap-2 rounded-card border bg-white/85 p-3 text-center transition ${
+      className={`flex h-full min-h-[150px] flex-col rounded-card border bg-white/85 p-4 transition ${
         dragging
           ? "cursor-grabbing border-logo/60 shadow-xl"
           : "border-tan/40 hover:border-logo/60 hover:shadow-md"
       }`}
     >
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cream text-xl">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-cream text-xl">
         <AppIcon app={app} imgClassName="h-6 w-6 object-contain" />
       </div>
-      <span className="w-full truncate text-sm font-semibold text-espresso">
-        {app.name}
-      </span>
+      <h3 className="font-serif text-base font-semibold text-espresso">{app.name}</h3>
+      {app.description && (
+        <p className="mt-1 line-clamp-2 text-sm text-espresso/60">{app.description}</p>
+      )}
     </div>
   );
 }
