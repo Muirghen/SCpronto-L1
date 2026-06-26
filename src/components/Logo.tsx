@@ -21,10 +21,10 @@ export function Logo({
       <img
         src={src}
         onError={() => setSrc("/logo.svg")}
-        width={size}
         height={size}
         alt="SC Pronto"
         className="select-none"
+        style={{ height: size, width: "auto" }}
       />
       {withWordmark && (
         <span
