@@ -1019,47 +1019,40 @@ export function StudioEditor({
   }
 
   async function download() {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
+    const canvas = fabricRef.current, fabric = modRef.current;
+    if (!canvas || !fabric) return;
     if (document.fonts?.ready) {
       try { await document.fonts.ready; } catch { /* ignore */ }
     }
     const { dw, dh, scale } = displaySize(format.w, format.h);
-    let url: string;
-    // The alignment-guidelines extension hooks `before:render` and touches the
-    // interactive top context, which doesn't exist during the offscreen render
-    // toDataURL does — so turn the guides off for the duration of the export.
-    guidelinesRef.current?.();
-    guidelinesRef.current = null;
-    // Export at native resolution regardless of the on-screen zoom: drop to
-    // 1:1, render, capture, then always restore zoom + the guides.
+
+    // Render onto a throwaway off-screen canvas so we never disturb the live
+    // editor (no white flash, no zoom juggling) and avoid interactive-only
+    // extensions (the alignment guides) that break the offscreen render.
+    const json = canvas.toJSON();
+    const el = document.createElement("canvas");
+    const temp = new fabric.StaticCanvas(el, {
+      width: dw, height: dh, enableRetinaScaling: false,
+    });
     try {
-      canvas.setDimensions({ width: dw, height: dh });
-      canvas.setZoom(1);
-      canvas.renderAll();
-      url = canvas.toDataURL({ format: "png", multiplier: 1 / scale });
+      await temp.loadFromJSON(json);
+      temp.renderAll();
+      const url = temp.toDataURL({ format: "png", multiplier: 1 / scale });
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${designName.replace(/\s+/g, "-").toLowerCase() || "design"}-${format.key}.png`;
+      // Some browsers only honour a download from an anchor that's in the DOM.
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch (err) {
       console.error("PNG export failed:", err);
       window.alert(
-        "Couldn't export the PNG. This usually means an uploaded image is blocking cross-origin export — try deleting and re-adding that image, then export again.",
+        "Couldn't export the PNG. If your design includes an uploaded image, it may be blocking cross-origin export — try deleting and re-adding that image.",
       );
-      return;
     } finally {
-      canvas.setDimensions({ width: dw * view.scale, height: dh * view.scale });
-      canvas.setZoom(view.scale);
-      canvas.requestRenderAll();
-      guidelinesRef.current = initAligningGuidelines(canvas, {
-        color: "#D85A30", margin: 5, width: 1,
-      });
+      temp.dispose();
     }
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${designName.replace(/\s+/g, "-").toLowerCase() || "design"}-${format.key}.png`;
-    // Some browsers only honour a download from an anchor that's in the DOM.
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
   }
 
   /* ============================ UI ============================ */
