@@ -1286,7 +1286,7 @@ export function StudioEditor({
         </div>
 
         {/* open panels stack in a column so they never overlap */}
-        <div className="pointer-events-none absolute left-[4.5rem] top-3 z-20 flex max-h-[calc(100%-1.5rem)] flex-col gap-2 overflow-y-auto pb-2">
+        <div className="no-scrollbar pointer-events-none absolute left-[4.5rem] top-3 z-20 flex max-h-[calc(100%-1.5rem)] flex-col gap-2 overflow-y-auto pb-2">
           {panels.filter((p) => openPanels[p.key]).map((p) => (
             <FloatingPanel key={p.key} title={p.title} icon={p.icon} onClose={() => closePanel(p.key)}>
               {p.body}
@@ -1295,7 +1295,7 @@ export function StudioEditor({
         </div>
 
         {/* right column: Properties / Text (contextual) above Layers (always) */}
-        <div className="pointer-events-none absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-60 flex-col gap-2 overflow-y-auto pb-2">
+        <div className="no-scrollbar pointer-events-none absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-60 flex-col gap-2 overflow-y-auto pb-2">
           {(selKind || tool === "text") && (
             <FloatingPanel title={propTitle} icon="sliders">
               {propertiesBody}
@@ -1489,7 +1489,7 @@ function FloatingPanel({
           </button>
         )}
       </div>
-      <div className="max-h-[60vh] overflow-y-auto">{children}</div>
+      <div className="no-scrollbar max-h-[60vh] overflow-y-auto">{children}</div>
     </div>
   );
 }

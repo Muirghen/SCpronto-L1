@@ -17,3 +17,12 @@ body {
   outline: 2px solid #d85a30;
   outline-offset: 2px;
 }
+
+/* Scrollable without a visible scrollbar (used by the Studio side panels). */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
