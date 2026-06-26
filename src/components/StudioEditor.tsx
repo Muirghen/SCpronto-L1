@@ -1,16 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, arrayMove, verticalListSortingStrategy, useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { Canvas as FabricCanvas, FabricObject } from "fabric";
 import type { Design } from "@/lib/types";
 import {
   FORMATS, PALETTE, FONTS, STICKERS, STARTERS,
   GOOGLE_FONTS_HREF, type FormatKey, type Starter,
 } from "@/lib/studio/templates";
-import { saveDesign, deleteDesign } from "@/app/studio/actions";
+import { saveDesign, deleteDesign, shareDesign } from "@/app/studio/actions";
 
 const MAX_W = 520;
 const MAX_H = 560;
+const GRID = 20; // display px
+
+type Person = { id: string; full_name: string | null; email: string };
 
 function displaySize(w: number, h: number) {
   const scale = Math.min(MAX_W / w, MAX_H / h);
@@ -24,11 +35,22 @@ const uid = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
+export function StudioEditor({
+  initialDesigns,
+  meId,
+  people,
+  initialShares,
+}: {
+  initialDesigns: Design[];
+  meId: string;
+  people: Person[];
+  initialShares: { design_id: string; shared_user_id: string }[];
+}) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
   const modRef = useRef<typeof import("fabric") | null>(null);
   const restoringRef = useRef(false);
+  const snapRef = useRef(false);
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
 
@@ -36,7 +58,11 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
   const [bgColor, setBgColor] = useState("#FBF4E8");
   const [selKind, setSelKind] = useState<"text" | "image" | "shape" | null>(null);
   const [hasShadow, setHasShadow] = useState(false);
+  const [opacity, setOpacity] = useState(100);
   const [layers, setLayers] = useState<Layer[]>([]);
+  const [dims, setDims] = useState({ dw: 0, dh: 0 });
+  const [showGrid, setShowGrid] = useState(false);
+  const [snap, setSnap] = useState(false);
   const [textProps, setTextProps] = useState({
     fontFamily: "Inter", fontSize: 64, fill: "#3A1A0E",
     bold: false, align: "center" as "left" | "center" | "right",
@@ -47,7 +73,32 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
   const [currentId, setCurrentId] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
+  // design_id -> set of user ids it's shared with (owned designs only).
+  const [shares, setShares] = useState<Record<string, string[]>>(() => {
+    const m: Record<string, string[]> = {};
+    for (const s of initialShares) {
+      (m[s.design_id] ??= []).push(s.shared_user_id);
+    }
+    return m;
+  });
+  const [shareOpen, setShareOpen] = useState<string | null>(null);
+
+  const peopleById = useMemo(() => {
+    const m: Record<string, Person> = {};
+    for (const p of people) m[p.id] = p;
+    return m;
+  }, [people]);
+
+  const owned = designs.filter((d) => d.user_id === meId);
+  const sharedWithMe = designs.filter((d) => d.user_id !== meId);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
   const format = FORMATS.find((f) => f.key === formatKey) ?? FORMATS[0];
+
+  useEffect(() => { snapRef.current = snap; }, [snap]);
 
   /* ---------------- helpers that read/refresh the canvas ---------------- */
 
@@ -81,6 +132,7 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
       return;
     }
     setHasShadow(Boolean(obj.shadow));
+    setOpacity(Math.round((obj.opacity ?? 1) * 100));
     if (obj.type === "textbox") {
       setSelKind("text");
       const t = obj as unknown as {
@@ -118,6 +170,7 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
         preserveObjectStacking: true,
       });
       fabricRef.current = canvas;
+      setDims({ dw, dh });
 
       const onSel = () => syncSelection(canvas.getActiveObject() ?? undefined);
       canvas.on("selection:created", onSel);
@@ -126,6 +179,14 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
       canvas.on("object:added", () => { snapshot(); refreshLayers(); });
       canvas.on("object:modified", () => { snapshot(); refreshLayers(); });
       canvas.on("object:removed", () => { snapshot(); refreshLayers(); });
+      // Snap-to-grid while dragging.
+      canvas.on("object:moving", (e) => {
+        if (!snapRef.current || !e.target) return;
+        e.target.set({
+          left: Math.round((e.target.left ?? 0) / GRID) * GRID,
+          top: Math.round((e.target.top ?? 0) / GRID) * GRID,
+        });
+      });
 
       undoStack.current = [JSON.stringify(canvas.toJSON())];
     })();
@@ -145,6 +206,7 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
     if (!canvas) return;
     const { dw, dh } = displaySize(format.w, format.h);
     canvas.setDimensions({ width: dw, height: dh });
+    setDims({ dw, dh });
     canvas.renderAll();
   }, [format.w, format.h]);
 
@@ -327,21 +389,60 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
     canvas.renderAll();
     syncSelection(obj);
   }
-  function moveLayer(id: string, dir: "up" | "down") {
-    const canvas = fabricRef.current, obj = findById(id);
-    if (!canvas || !obj) return;
-    if (dir === "up") canvas.bringObjectForward(obj);
-    else canvas.sendObjectBackwards(obj);
-    canvas.renderAll();
-    snapshot();
-    refreshLayers();
-  }
   function toggleVisible(id: string) {
     const canvas = fabricRef.current, obj = findById(id);
     if (!canvas || !obj) return;
     obj.visible = obj.visible === false;
     canvas.renderAll();
     refreshLayers();
+  }
+
+  function onLayersReorder(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldI = layers.findIndex((l) => l.id === active.id);
+    const newI = layers.findIndex((l) => l.id === over.id);
+    if (oldI === -1 || newI === -1) return;
+    const next = arrayMove(layers, oldI, newI);
+    setLayers(next);
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    // Layers list is top-first; canvas stack is bottom-first.
+    [...next].reverse().forEach((l, idx) => {
+      const o = findById(l.id);
+      if (o) canvas.moveObjectTo(o, idx);
+    });
+    canvas.renderAll();
+    snapshot();
+  }
+
+  /* ---------------- opacity & duplicate ---------------- */
+
+  function setObjOpacity(v: number) {
+    setOpacity(v);
+    const canvas = fabricRef.current, obj = activeObj();
+    if (!canvas || !obj) return;
+    obj.set("opacity", v / 100);
+    canvas.renderAll();
+  }
+
+  async function duplicateSelected() {
+    const canvas = fabricRef.current, obj = activeObj();
+    if (!canvas || !obj) return;
+    const cloned = await obj.clone();
+    cloned.set({ left: (obj.left ?? 0) + 24, top: (obj.top ?? 0) + 24 });
+    add(cloned);
+  }
+
+  /* ---------------- sharing ---------------- */
+
+  function toggleShareUser(designId: string, userId: string) {
+    const cur = new Set(shares[designId] ?? []);
+    if (cur.has(userId)) cur.delete(userId);
+    else cur.add(userId);
+    const ids = Array.from(cur);
+    setShares((prev) => ({ ...prev, [designId]: ids }));
+    shareDesign(designId, ids); // persist in the background
   }
 
   /* ---------------- starters & background ---------------- */
@@ -486,6 +587,16 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
           <button onClick={undo} className="flex-1 rounded-lg border border-tan/50 px-3 py-2 text-sm font-medium text-espresso/70 hover:bg-tan/10">↶ Undo</button>
           <button onClick={redo} className="flex-1 rounded-lg border border-tan/50 px-3 py-2 text-sm font-medium text-espresso/70 hover:bg-tan/10">↷ Redo</button>
         </div>
+        <div className="flex gap-2">
+          <button onClick={() => setShowGrid((v) => !v)}
+            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${showGrid ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+            ▦ Grid
+          </button>
+          <button onClick={() => setSnap((v) => !v)}
+            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${snap ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+            ⌖ Snap
+          </button>
+        </div>
 
         <Section title="Start from a template">
           <div className="grid grid-cols-2 gap-2">
@@ -564,8 +675,15 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
             {selKind === "shape" && (
               <ShapeFill onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
             )}
+            <label className="mt-3 block text-xs font-medium text-espresso/70">
+              Opacity — {opacity}%
+              <input type="range" min={10} max={100} value={opacity}
+                onChange={(e) => setObjOpacity(Number(e.target.value))}
+                className="mt-1 w-full accent-logo" />
+            </label>
             <div className="mt-3 flex flex-wrap gap-2">
               <ToolButton onClick={toggleShadow} variant={hasShadow ? "dark" : "ghost"}>Shadow</ToolButton>
+              <ToolButton onClick={duplicateSelected} variant="ghost">Duplicate</ToolButton>
               <button onClick={deleteSelected}
                 className="rounded-lg border border-logo/40 px-3 py-2 text-sm font-semibold text-orange-light hover:bg-logo/10">Delete</button>
             </div>
@@ -574,16 +692,18 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
 
         {layers.length > 0 && (
           <Section title="Layers">
-            <ul className="space-y-1">
-              {layers.map((l) => (
-                <li key={l.id} className="flex items-center gap-1 rounded-lg border border-tan/30 bg-white/60 px-2 py-1.5 text-xs">
-                  <button onClick={() => selectLayer(l.id)} className="flex-1 truncate text-left text-espresso/80">{l.name}</button>
-                  <button onClick={() => toggleVisible(l.id)} title="Show/hide" className="px-1 text-espresso/50 hover:text-espresso">{l.visible ? "👁" : "🚫"}</button>
-                  <button onClick={() => moveLayer(l.id, "up")} title="Up" className="px-1 text-espresso/50 hover:text-espresso">▲</button>
-                  <button onClick={() => moveLayer(l.id, "down")} title="Down" className="px-1 text-espresso/50 hover:text-espresso">▼</button>
-                </li>
-              ))}
-            </ul>
+            <p className="mb-1.5 text-[11px] text-tan">Drag to reorder</p>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onLayersReorder}>
+              <SortableContext items={layers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
+                <ul className="space-y-1">
+                  {layers.map((l) => (
+                    <LayerRow key={l.id} layer={l}
+                      onSelect={() => selectLayer(l.id)}
+                      onToggle={() => toggleVisible(l.id)} />
+                  ))}
+                </ul>
+              </SortableContext>
+            </DndContext>
           </Section>
         )}
       </aside>
@@ -602,21 +722,72 @@ export function StudioEditor({ initialDesigns }: { initialDesigns: Design[] }) {
         </div>
 
         <div className="inline-block rounded-card bg-white p-4 shadow-md ring-1 ring-tan/30">
-          <canvas ref={canvasElRef} />
+          <div className="relative" style={{ width: dims.dw, height: dims.dh }}>
+            <canvas ref={canvasElRef} />
+            {showGrid && (
+              <div className="pointer-events-none absolute inset-0"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to right, rgba(140,140,140,.4) 1px, transparent 1px), linear-gradient(to bottom, rgba(140,140,140,.4) 1px, transparent 1px)",
+                  backgroundSize: `${GRID}px ${GRID}px`,
+                }} />
+            )}
+          </div>
           <p className="mt-3 text-center text-xs text-tan">
             Click to select • drag to move • corners to resize • double-click text to edit • Ctrl+Z / Ctrl+Shift+Z
           </p>
         </div>
 
-        {designs.length > 0 && (
+        {owned.length > 0 && (
           <div className="w-full max-w-xl">
             <h3 className="mb-2 text-sm font-semibold text-espresso">My saved designs</h3>
             <ul className="divide-y divide-tan/20 rounded-card border border-tan/30 bg-white/60">
-              {designs.map((d) => (
+              {owned.map((d) => (
+                <li key={d.id}>
+                  <div className="flex items-center gap-3 px-3 py-2 text-sm">
+                    <button onClick={() => openDesign(d)} className="flex-1 truncate text-left font-medium text-espresso hover:text-orange-light">{d.name}</button>
+                    <span className="text-xs text-tan">{d.format_key}</span>
+                    <button onClick={() => setShareOpen(shareOpen === d.id ? null : d.id)}
+                      className="text-xs font-semibold text-espresso/70 hover:underline">
+                      Share{shares[d.id]?.length ? ` (${shares[d.id].length})` : ""}
+                    </button>
+                    <button onClick={() => removeDesign(d.id)} className="text-xs font-semibold text-orange-light hover:underline">Delete</button>
+                  </div>
+                  {shareOpen === d.id && (
+                    <div className="border-t border-tan/20 bg-cream/40 px-3 py-2">
+                      {people.length === 0 ? (
+                        <p className="text-xs text-tan">No colleagues to share with yet.</p>
+                      ) : (
+                        <ul className="max-h-40 space-y-1 overflow-auto">
+                          {people.map((p) => (
+                            <li key={p.id}>
+                              <label className="flex items-center gap-2 text-xs text-espresso/80">
+                                <input type="checkbox" className="accent-logo"
+                                  checked={(shares[d.id] ?? []).includes(p.id)}
+                                  onChange={() => toggleShareUser(d.id, p.id)} />
+                                {p.full_name || p.email}
+                              </label>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {sharedWithMe.length > 0 && (
+          <div className="w-full max-w-xl">
+            <h3 className="mb-2 text-sm font-semibold text-espresso">Shared with me</h3>
+            <ul className="divide-y divide-tan/20 rounded-card border border-tan/30 bg-white/60">
+              {sharedWithMe.map((d) => (
                 <li key={d.id} className="flex items-center gap-3 px-3 py-2 text-sm">
                   <button onClick={() => openDesign(d)} className="flex-1 truncate text-left font-medium text-espresso hover:text-orange-light">{d.name}</button>
+                  <span className="text-xs text-tan">by {peopleById[d.user_id]?.full_name || peopleById[d.user_id]?.email || "teammate"}</span>
                   <span className="text-xs text-tan">{d.format_key}</span>
-                  <button onClick={() => removeDesign(d.id)} className="text-xs font-semibold text-orange-light hover:underline">Delete</button>
                 </li>
               ))}
             </ul>
@@ -638,6 +809,29 @@ function starPoints(spikes: number, outer: number, inner: number) {
     pts.push({ x: Math.cos(rot) * inner, y: Math.sin(rot) * inner }); rot += step;
   }
   return pts;
+}
+
+function LayerRow({
+  layer, onSelect, onToggle,
+}: {
+  layer: Layer; onSelect: () => void; onToggle: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: layer.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+  };
+  return (
+    <li ref={setNodeRef} style={style}
+      className={`flex items-center gap-1 rounded-lg border bg-white/70 px-1.5 py-1.5 text-xs ${isDragging ? "border-logo/60 shadow" : "border-tan/30"}`}>
+      <span {...attributes} {...listeners}
+        className="cursor-grab touch-none px-1 text-tan active:cursor-grabbing" title="Drag to reorder">⠿</span>
+      <button onClick={onSelect} className="flex-1 truncate text-left text-espresso/80">{layer.name}</button>
+      <button onClick={onToggle} title="Show/hide" className="px-1 text-espresso/50 hover:text-espresso">{layer.visible ? "👁" : "🚫"}</button>
+    </li>
+  );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

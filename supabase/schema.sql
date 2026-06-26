@@ -81,6 +81,19 @@ create index if not exists designs_user_idx
   on public.designs (user_id, updated_at desc);
 
 -- ---------------------------------------------------------------------
+-- design_shares: which other users a design's owner has shared it with.
+-- ---------------------------------------------------------------------
+create table if not exists public.design_shares (
+  design_id      uuid not null references public.designs (id) on delete cascade,
+  shared_user_id uuid not null references auth.users (id) on delete cascade,
+  created_at     timestamptz not null default now(),
+  primary key (design_id, shared_user_id)
+);
+
+create index if not exists design_shares_user_idx
+  on public.design_shares (shared_user_id);
+
+-- ---------------------------------------------------------------------
 -- Helper: is the current user an admin?  (security definer avoids
 -- recursive RLS checks against the profiles table.)
 -- ---------------------------------------------------------------------
@@ -93,6 +106,46 @@ as $$
   select exists (
     select 1 from public.profiles
     where id = auth.uid() and role = 'admin' and status = 'active'
+  );
+$$;
+
+-- Is the current user an active employee? (lets colleagues find each other
+-- for sharing without exposing privileged fields). Security definer avoids
+-- recursive RLS against profiles.
+create or replace function public.is_active_user()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and status = 'active'
+  );
+$$;
+
+-- Does the current user own this design?
+create or replace function public.owns_design(d uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.designs where id = d and user_id = auth.uid()
+  );
+$$;
+
+-- Has this design been shared with the current user?
+create or replace function public.design_shared_with_me(d uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.design_shares
+    where design_id = d and shared_user_id = auth.uid()
   );
 $$;
 
@@ -139,15 +192,21 @@ create trigger on_auth_user_created
 -- =====================================================================
 -- Row Level Security
 -- =====================================================================
-alter table public.profiles  enable row level security;
-alter table public.apps      enable row level security;
-alter table public.user_apps enable row level security;
-alter table public.designs   enable row level security;
+alter table public.profiles      enable row level security;
+alter table public.apps          enable row level security;
+alter table public.user_apps     enable row level security;
+alter table public.designs       enable row level security;
+alter table public.design_shares enable row level security;
 
 -- ---- profiles policies ----
 drop policy if exists "read own or admin reads all" on public.profiles;
 create policy "read own or admin reads all" on public.profiles
   for select using (id = auth.uid() or public.is_admin());
+
+-- Active employees can read colleagues (needed to pick people to share with).
+drop policy if exists "active users read profiles" on public.profiles;
+create policy "active users read profiles" on public.profiles
+  for select using (public.is_active_user());
 
 drop policy if exists "user updates own non-privileged fields" on public.profiles;
 create policy "user updates own non-privileged fields" on public.profiles
@@ -188,10 +247,37 @@ drop policy if exists "remove from own library" on public.user_apps;
 create policy "remove from own library" on public.user_apps
   for delete using (user_id = auth.uid());
 
--- ---- designs policies: each user owns only their own saved designs ----
+-- ---- designs policies: owner has full control; shared users can view+edit ----
 drop policy if exists "manage own designs" on public.designs;
-create policy "manage own designs" on public.designs
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "read own or shared designs" on public.designs;
+create policy "read own or shared designs" on public.designs
+  for select using (user_id = auth.uid() or public.design_shared_with_me(id));
+
+drop policy if exists "insert own designs" on public.designs;
+create policy "insert own designs" on public.designs
+  for insert with check (user_id = auth.uid());
+
+drop policy if exists "update own or shared designs" on public.designs;
+create policy "update own or shared designs" on public.designs
+  for update using (user_id = auth.uid() or public.design_shared_with_me(id));
+
+drop policy if exists "delete own designs" on public.designs;
+create policy "delete own designs" on public.designs
+  for delete using (user_id = auth.uid());
+
+-- ---- design_shares policies: owner manages; recipient can see their share ----
+drop policy if exists "owner or recipient reads shares" on public.design_shares;
+create policy "owner or recipient reads shares" on public.design_shares
+  for select using (public.owns_design(design_id) or shared_user_id = auth.uid());
+
+drop policy if exists "owner adds shares" on public.design_shares;
+create policy "owner adds shares" on public.design_shares
+  for insert with check (public.owns_design(design_id));
+
+drop policy if exists "owner removes shares" on public.design_shares;
+create policy "owner removes shares" on public.design_shares
+  for delete using (public.owns_design(design_id));
 
 -- ---------------------------------------------------------------------
 -- Guard against employees self-promoting to admin via the user-update

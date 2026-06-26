@@ -21,12 +21,24 @@ export default async function StudioPage() {
 
   if (profile?.status === "disabled") redirect("/apps");
 
+  // RLS returns designs the user owns *and* designs shared with them.
   const { data: designs } = await supabase
     .from("designs")
     .select("*")
-    .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .returns<Design[]>();
+
+  // Colleagues to share with, and the current share memberships.
+  const { data: people } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .order("full_name", { ascending: true })
+    .returns<{ id: string; full_name: string | null; email: string }[]>();
+
+  const { data: shares } = await supabase
+    .from("design_shares")
+    .select("design_id, shared_user_id")
+    .returns<{ design_id: string; shared_user_id: string }[]>();
 
   return (
     <div className="min-h-screen">
@@ -47,7 +59,12 @@ export default async function StudioPage() {
           </p>
         </div>
 
-        <StudioEditor initialDesigns={designs ?? []} />
+        <StudioEditor
+          initialDesigns={designs ?? []}
+          meId={user.id}
+          people={(people ?? []).filter((p) => p.id !== user.id)}
+          initialShares={shares ?? []}
+        />
       </main>
     </div>
   );
