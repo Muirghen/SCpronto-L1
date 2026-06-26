@@ -10,8 +10,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import Link from "next/link";
-import type { Canvas as FabricCanvas, FabricObject } from "fabric";
+import type { Canvas as FabricCanvas, FabricObject, TPointerEventInfo } from "fabric";
 import { Logo } from "@/components/Logo";
+import { Icon, type IconName } from "@/components/studio/Icon";
 import type { Design } from "@/lib/types";
 import {
   FORMATS, PALETTE, FONTS, STICKERS, STARTERS,
@@ -58,6 +59,11 @@ export function StudioEditor({
 
   const [formatKey, setFormatKey] = useState<FormatKey>("ig-post");
   const [bgColor, setBgColor] = useState("#FBF4E8");
+  // Active bottom-bar tool: select (pointer) or text (drag to draw a box).
+  const [tool, setTool] = useState<"select" | "text">("select");
+  // Which detachable left-rail panels are currently open (Layers is separate
+  // and always visible). Open panels stack so they never overlap.
+  const [openPanels, setOpenPanels] = useState<Record<string, boolean>>({});
   const [selKind, setSelKind] = useState<"text" | "image" | "shape" | null>(null);
   const [hasShadow, setHasShadow] = useState(false);
   const [opacity, setOpacity] = useState(100);
@@ -123,6 +129,18 @@ export function StudioEditor({
 
   useEffect(() => { snapRef.current = snap; }, [snap]);
 
+  function togglePanel(key: string) {
+    setOpenPanels((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+  function closePanel(key: string) {
+    setOpenPanels((prev) => ({ ...prev, [key]: false }));
+  }
+
+  // Pop the Properties panel open automatically when something is selected.
+  useEffect(() => {
+    if (selKind) setOpenPanels((prev) => (prev.properties ? prev : { ...prev, properties: true }));
+  }, [selKind]);
+
   // Middle-mouse drag pans the view.
   function onWorkspaceMouseDown(e: React.MouseEvent) {
     if (e.button !== 1) return;
@@ -158,6 +176,94 @@ export function StudioEditor({
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  // Text tool: drag on the canvas to draw the text box, then start editing.
+  // While active the pointer is a crosshair and clicks don't select objects.
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    const fabric = modRef.current;
+    if (!canvas || !fabric) return;
+
+    if (tool !== "text") {
+      canvas.skipTargetFind = false;
+      canvas.selection = true;
+      canvas.defaultCursor = "default";
+      return;
+    }
+
+    canvas.skipTargetFind = true;
+    canvas.selection = false;
+    canvas.defaultCursor = "crosshair";
+    canvas.discardActiveObject();
+    canvas.renderAll();
+
+    let start: { x: number; y: number } | null = null;
+    let preview: FabricObject | null = null;
+
+    const point = (opt: TPointerEventInfo) =>
+      canvas.getScenePoint(opt.e) ?? canvas.getViewportPoint(opt.e);
+
+    const down = (opt: TPointerEventInfo) => {
+      start = point(opt);
+      preview = new fabric.Rect({
+        left: start.x, top: start.y, width: 1, height: 1,
+        fill: "rgba(216,90,48,0.06)", stroke: "#D85A30",
+        strokeWidth: 1, strokeDashArray: [6, 4],
+        selectable: false, evented: false,
+      });
+      restoringRef.current = true; // don't snapshot the throwaway preview
+      canvas.add(preview);
+    };
+    const move = (opt: TPointerEventInfo) => {
+      if (!start || !preview) return;
+      const p = point(opt);
+      preview.set({
+        left: Math.min(p.x, start.x), top: Math.min(p.y, start.y),
+        width: Math.abs(p.x - start.x), height: Math.abs(p.y - start.y),
+      });
+      canvas.renderAll();
+    };
+    const up = (opt: TPointerEventInfo) => {
+      if (!start) return;
+      const p = point(opt);
+      if (preview) { canvas.remove(preview); preview = null; }
+      restoringRef.current = false;
+      const drawn = Math.abs(p.x - start.x);
+      const width = drawn < 24 ? canvas.getWidth() * 0.5 : drawn;
+      const left = drawn < 24 ? start.x : Math.min(p.x, start.x);
+      const top = Math.min(p.y, start.y);
+      const tb = new fabric.Textbox("Your text", {
+        left, top, width,
+        fontSize: 40 * (canvas.getWidth() / format.w),
+        fontFamily: "Inter", fill: "#3A1A0E", textAlign: "left",
+      });
+      (tb as FabricObject & { id?: string }).id = uid();
+      canvas.skipTargetFind = false;
+      canvas.selection = true;
+      canvas.add(tb);
+      canvas.setActiveObject(tb);
+      (tb as unknown as { enterEditing?: () => void }).enterEditing?.();
+      (tb as unknown as { selectAll?: () => void }).selectAll?.();
+      canvas.renderAll();
+      syncSelection(tb);
+      start = null;
+      setTool("select");
+    };
+
+    canvas.on("mouse:down", down);
+    canvas.on("mouse:move", move);
+    canvas.on("mouse:up", up);
+    return () => {
+      canvas.off("mouse:down", down);
+      canvas.off("mouse:move", move);
+      canvas.off("mouse:up", up);
+      if (preview) { canvas.remove(preview); restoringRef.current = false; }
+      canvas.skipTargetFind = false;
+      canvas.selection = true;
+      canvas.defaultCursor = "default";
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, format.w]);
 
   /* ---------------- helpers that read/refresh the canvas ---------------- */
 
@@ -311,6 +417,10 @@ export function StudioEditor({
         if (obj && !(obj as unknown as { isEditing?: boolean }).isEditing) {
           e.preventDefault(); deleteSelected();
         }
+      } else if (!mod && e.key.toLowerCase() === "v") {
+        setTool("select");
+      } else if (!mod && e.key.toLowerCase() === "t") {
+        setTool("text");
       }
     }
     window.addEventListener("keydown", onKey);
@@ -638,6 +748,160 @@ export function StudioEditor({
 
   /* ============================ UI ============================ */
 
+  // Detachable left-rail panels (Layers lives on the right, always open).
+  const panels: { key: string; title: string; icon: IconName; body: React.ReactNode }[] = [
+    {
+      key: "templates", title: "Templates", icon: "templates",
+      body: (
+        <div className="grid grid-cols-2 gap-1.5 p-3">
+          {STARTERS.map((s) => (
+            <button key={s.key} onClick={() => applyStarter(s)}
+              className="rounded border border-tan/40 px-1.5 py-1.5 text-[11px] font-medium text-espresso/80 transition hover:border-logo hover:bg-logo/5">
+              {s.label}
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: "elements", title: "Elements", icon: "plus",
+      body: (
+        <div className="space-y-2 p-3">
+          <div className="grid grid-cols-3 gap-1.5">
+            <ToolButton onClick={addText}><Icon name="text" size={15} /> Text</ToolButton>
+            <ToolButton onClick={addLogo}><Logo size={15} /> Logo</ToolButton>
+            <label className="flex cursor-pointer items-center justify-center gap-1 rounded-lg bg-espresso px-2 py-1.5 text-xs font-semibold text-cream transition hover:bg-espresso/90">
+              <Icon name="image" size={15} /> Img
+              <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
+            </label>
+          </div>
+          <div className="grid grid-cols-5 gap-1">
+            {(["rect", "circle", "triangle", "star", "line"] as const).map((kind) => (
+              <button key={kind} title={`Add ${kind}`} onClick={() => addShape(kind)}
+                className="flex items-center justify-center rounded border border-tan/50 py-2 text-espresso/70 transition hover:border-logo hover:bg-logo/5">
+                <Icon name={kind} size={18} />
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-0.5">
+            {STICKERS.map((s) => (
+              <button key={s} onClick={() => addSticker(s)} className="rounded px-1 py-0.5 text-lg transition hover:scale-110 hover:bg-tan/10">{s}</button>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "properties", title: "Properties", icon: "sliders",
+      body: !selKind ? (
+        <p className="px-3 py-3 text-[11px] text-tan">Select an element to edit its properties.</p>
+      ) : (
+        <div className="p-3">
+          {selKind === "text" && (
+            <div className="space-y-2.5">
+              <select value={textProps.fontFamily} onChange={(e) => updateText({ fontFamily: e.target.value })}
+                className="w-full rounded border border-tan/50 bg-white px-2 py-1.5 text-xs text-espresso focus:border-logo focus:outline-none">
+                {FONTS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
+              </select>
+              <label className="block text-[11px] font-medium text-espresso/70">
+                Size — {textProps.fontSize}px
+                <input type="range" min={12} max={400} value={textProps.fontSize}
+                  onChange={(e) => updateText({ fontSize: Number(e.target.value) })}
+                  className="mt-1 w-full accent-logo" />
+              </label>
+              <div className="flex gap-1">
+                {(["left", "center", "right"] as const).map((a) => (
+                  <button key={a} onClick={() => updateText({ align: a })}
+                    className={`flex flex-1 items-center justify-center rounded border px-2 py-1.5 ${textProps.align === a ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+                    <Icon name={a === "left" ? "alignLeft" : a === "center" ? "alignCenter" : "alignRight"} size={16} />
+                  </button>
+                ))}
+                <button onClick={() => updateText({ bold: !textProps.bold })}
+                  className={`flex flex-1 items-center justify-center rounded border px-2 py-1.5 ${textProps.bold ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+                  <Icon name="bold" size={16} />
+                </button>
+              </div>
+              <Swatches value={textProps.fill} onPick={(c) => updateText({ fill: c })} extra={customColors} onAdd={addCustomColor} />
+            </div>
+          )}
+          {selKind === "shape" && (
+            <ShapeFill extra={customColors} onAdd={addCustomColor}
+              onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
+          )}
+          <label className="mt-2.5 block text-[11px] font-medium text-espresso/70">
+            Opacity — {opacity}%
+            <input type="range" min={10} max={100} value={opacity}
+              onChange={(e) => setObjOpacity(Number(e.target.value))}
+              className="mt-1 w-full accent-logo" />
+          </label>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            <ToolButton onClick={toggleShadow} variant={hasShadow ? "dark" : "ghost"}><Icon name="shadow" size={15} /> Shadow</ToolButton>
+            <ToolButton onClick={duplicateSelected} variant="ghost"><Icon name="duplicate" size={15} /> Duplicate</ToolButton>
+            <button onClick={deleteSelected}
+              className="flex items-center gap-1 rounded-lg border border-logo/40 px-2 py-1.5 text-xs font-semibold text-orange-light hover:bg-logo/10">
+              <Icon name="trash" size={15} /> Delete
+            </button>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "canvas", title: "Background", icon: "palette",
+      body: (
+        <div className="p-3">
+          <Swatches value={bgColor} onPick={setBackground} extra={customColors} onAdd={addCustomColor} />
+        </div>
+      ),
+    },
+    ...(owned.length > 0 || sharedWithMe.length > 0 ? [{
+      key: "files", title: "Files", icon: "folder" as IconName,
+      body: (
+        <ul className="space-y-1 p-3">
+          {owned.map((d) => (
+            <li key={d.id}>
+              <div className="flex items-center gap-1 rounded border border-tan/30 bg-white/70 px-2 py-1 text-[11px]">
+                <button onClick={() => openDesign(d)} className="flex-1 truncate text-left text-espresso/80 hover:text-orange-light">{d.name}</button>
+                <button onClick={() => setShareOpen(shareOpen === d.id ? null : d.id)} title="Share"
+                  className="flex items-center gap-0.5 px-1 text-espresso/50 hover:text-espresso">
+                  <Icon name="share" size={13} />{shares[d.id]?.length ? shares[d.id].length : ""}
+                </button>
+                <button onClick={() => removeDesign(d.id)} title="Delete" className="px-1 text-orange-light">
+                  <Icon name="close" size={13} />
+                </button>
+              </div>
+              {shareOpen === d.id && (
+                <div className="mt-1 rounded border border-tan/30 bg-cream/60 p-1.5">
+                  {people.length === 0 ? (
+                    <p className="text-[11px] text-tan">No colleagues yet.</p>
+                  ) : (
+                    <ul className="max-h-32 space-y-0.5 overflow-auto">
+                      {people.map((p) => (
+                        <li key={p.id}>
+                          <label className="flex items-center gap-1.5 text-[11px] text-espresso/80">
+                            <input type="checkbox" className="accent-logo"
+                              checked={(shares[d.id] ?? []).includes(p.id)}
+                              onChange={() => toggleShareUser(d.id, p.id)} />
+                            {p.full_name || p.email}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </li>
+          ))}
+          {sharedWithMe.map((d) => (
+            <li key={d.id} className="flex items-center gap-1 rounded border border-dashed border-tan/40 bg-white/50 px-2 py-1 text-[11px]">
+              <button onClick={() => openDesign(d)} className="flex-1 truncate text-left text-espresso/80 hover:text-orange-light">{d.name}</button>
+              <span className="text-tan">{peopleById[d.user_id]?.full_name?.split(" ")[0] ?? "shared"}</span>
+            </li>
+          ))}
+        </ul>
+      ),
+    }] : []),
+  ];
+
   return (
     <div className="flex h-full flex-col bg-cream text-espresso">
       {/* ---- top toolbar ---- */}
@@ -647,11 +911,11 @@ export function StudioEditor({
           <Logo size={22} />
         </Link>
         <span className="mx-0.5 h-5 w-px bg-tan/30" />
-        <TopBtn onClick={undo} title="Undo (Ctrl+Z)">↶</TopBtn>
-        <TopBtn onClick={redo} title="Redo (Ctrl+Shift+Z)">↷</TopBtn>
+        <TopBtn onClick={undo} title="Undo (Ctrl+Z)"><Icon name="undo" size={18} /></TopBtn>
+        <TopBtn onClick={redo} title="Redo (Ctrl+Shift+Z)"><Icon name="redo" size={18} /></TopBtn>
         <span className="mx-1 h-5 w-px bg-tan/30" />
-        <TopBtn onClick={() => setShowGrid((v) => !v)} title="Grid" active={showGrid}>▦</TopBtn>
-        <TopBtn onClick={() => setSnap((v) => !v)} title="Snap to grid" active={snap}>⌖</TopBtn>
+        <TopBtn onClick={() => setShowGrid((v) => !v)} title="Grid" active={showGrid}><Icon name="grid" size={18} /></TopBtn>
+        <TopBtn onClick={() => setSnap((v) => !v)} title="Snap to grid" active={snap}><Icon name="magnet" size={18} /></TopBtn>
         <span className="mx-1 h-5 w-px bg-tan/30" />
         <select value={formatKey} onChange={(e) => setFormatKey(e.target.value as FormatKey)}
           className="rounded border border-tan/40 bg-white px-2 py-1 text-xs text-espresso focus:border-logo focus:outline-none">
@@ -663,96 +927,25 @@ export function StudioEditor({
         <div className="flex-1" />
         <input value={designName} onChange={(e) => setDesignName(e.target.value)}
           className="w-44 rounded border border-tan/40 bg-white px-2.5 py-1 text-xs text-espresso focus:border-logo focus:outline-none" />
-        <button onClick={newDesign} className="rounded border border-tan/40 px-2.5 py-1 text-xs font-semibold text-espresso/70 hover:bg-tan/10">New</button>
-        <button onClick={doSave} disabled={busy}
-          className="rounded bg-espresso px-3 py-1 text-xs font-semibold text-cream hover:bg-espresso/90 disabled:opacity-60">
-          {busy ? "Saving…" : "Save"}
+        <button onClick={newDesign} title="New design"
+          className="flex items-center gap-1.5 rounded border border-tan/40 px-2.5 py-1 text-xs font-semibold text-espresso/70 hover:bg-tan/10">
+          <Icon name="newFile" size={16} /> New
         </button>
-        <button onClick={download} className="rounded bg-logo px-3 py-1 text-xs font-bold text-cream hover:bg-orange-light">⬇ PNG</button>
+        <button onClick={doSave} disabled={busy} title="Save design"
+          className="flex items-center gap-1.5 rounded bg-espresso px-3 py-1 text-xs font-semibold text-cream hover:bg-espresso/90 disabled:opacity-60">
+          <Icon name="save" size={16} /> {busy ? "Saving…" : "Save"}
+        </button>
+        <button onClick={download} title="Export PNG"
+          className="flex items-center gap-1.5 rounded bg-logo px-3 py-1 text-xs font-bold text-cream hover:bg-orange-light">
+          <Icon name="download" size={16} /> PNG
+        </button>
       </div>
 
-      {/* ---- body: left | canvas | right ---- */}
-      <div className="relative flex min-h-0 flex-1">
-        {/* left rail: templates, layers, files */}
-        <CollapsibleRail side="left" items={[
-          { symbol: "▦", label: "Templates", content: (
-            <Section title="Templates">
-              <div className="grid grid-cols-2 gap-1.5">
-                {STARTERS.map((s) => (
-                  <button key={s.key} onClick={() => applyStarter(s)}
-                    className="rounded border border-tan/40 px-1.5 py-1.5 text-[11px] font-medium text-espresso/80 transition hover:border-logo hover:bg-logo/5">
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </Section>
-          ) },
-          { symbol: "≣", label: "Layers", content: (
-            <Section title="Layers">
-              {layers.length === 0 ? (
-                <p className="text-[11px] text-tan">Add something to see layers.</p>
-              ) : (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onLayersReorder}>
-                  <SortableContext items={layers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-                    <ul className="space-y-1">
-                      {layers.map((l) => (
-                        <LayerRow key={l.id} layer={l}
-                          onSelect={() => selectLayer(l.id)}
-                          onToggle={() => toggleVisible(l.id)} />
-                      ))}
-                    </ul>
-                  </SortableContext>
-                </DndContext>
-              )}
-            </Section>
-          ) },
-          ...(owned.length > 0 || sharedWithMe.length > 0 ? [{ symbol: "🗂", label: "Files", content: (
-            <Section title="My files">
-              <ul className="space-y-1">
-                {owned.map((d) => (
-                  <li key={d.id}>
-                    <div className="flex items-center gap-1 rounded border border-tan/30 bg-white/70 px-2 py-1 text-[11px]">
-                      <button onClick={() => openDesign(d)} className="flex-1 truncate text-left text-espresso/80 hover:text-orange-light">{d.name}</button>
-                      <button onClick={() => setShareOpen(shareOpen === d.id ? null : d.id)} title="Share"
-                        className="px-1 text-espresso/50 hover:text-espresso">⤴{shares[d.id]?.length ? shares[d.id].length : ""}</button>
-                      <button onClick={() => removeDesign(d.id)} title="Delete" className="px-1 text-orange-light">✕</button>
-                    </div>
-                    {shareOpen === d.id && (
-                      <div className="mt-1 rounded border border-tan/30 bg-cream/60 p-1.5">
-                        {people.length === 0 ? (
-                          <p className="text-[11px] text-tan">No colleagues yet.</p>
-                        ) : (
-                          <ul className="max-h-32 space-y-0.5 overflow-auto">
-                            {people.map((p) => (
-                              <li key={p.id}>
-                                <label className="flex items-center gap-1.5 text-[11px] text-espresso/80">
-                                  <input type="checkbox" className="accent-logo"
-                                    checked={(shares[d.id] ?? []).includes(p.id)}
-                                    onChange={() => toggleShareUser(d.id, p.id)} />
-                                  {p.full_name || p.email}
-                                </label>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                ))}
-                {sharedWithMe.map((d) => (
-                  <li key={d.id} className="flex items-center gap-1 rounded border border-dashed border-tan/40 bg-white/50 px-2 py-1 text-[11px]">
-                    <button onClick={() => openDesign(d)} className="flex-1 truncate text-left text-espresso/80 hover:text-orange-light">{d.name}</button>
-                    <span className="text-tan">{peopleById[d.user_id]?.full_name?.split(" ")[0] ?? "shared"}</span>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          ) }] : []),
-        ]} />
-
-        {/* center workspace */}
+      {/* ---- body: floating panels over a full-bleed workspace ---- */}
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#E2D8C6]">
+        {/* workspace fills the area; panels float above it */}
         <div ref={workspaceRef} onMouseDown={onWorkspaceMouseDown}
-          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#E2D8C6]">
+          className="absolute inset-0 flex items-center justify-center overflow-hidden">
           <div style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: "center center" }}>
             <div className="rounded-md bg-white p-2 shadow-xl ring-1 ring-black/5">
               <div className="relative" style={{ width: dims.dw, height: dims.dh }}>
@@ -768,88 +961,54 @@ export function StudioEditor({
               </div>
             </div>
           </div>
-          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-espresso/70 px-3 py-1 text-[11px] text-cream">
+          <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-espresso/65 px-3 py-1 text-[11px] text-cream">
             Middle-drag to pan • Ctrl + scroll to zoom
           </div>
         </div>
 
-        {/* right rail: add + properties + canvas */}
-        <CollapsibleRail side="right" items={[
-          { symbol: "＋", label: "Add", content: (
-            <Section title="Add">
-              <div className="grid grid-cols-3 gap-1.5">
-                <ToolButton onClick={addText}>＋ Text</ToolButton>
-                <ToolButton onClick={addLogo}>＋ Logo</ToolButton>
-                <label className="flex cursor-pointer items-center justify-center rounded-lg bg-espresso px-2 py-1.5 text-xs font-semibold text-cream transition hover:bg-espresso/90">
-                  ＋ Img
-                  <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
-                </label>
-              </div>
-              <div className="mt-1.5 grid grid-cols-5 gap-1">
-                {([["▭", "rect"], ["◯", "circle"], ["△", "triangle"], ["★", "star"], ["—", "line"]] as const).map(([icon, kind]) => (
-                  <button key={kind} title={`Add ${kind}`} onClick={() => addShape(kind)}
-                    className="rounded border border-tan/50 py-1.5 text-espresso/70 transition hover:border-logo hover:bg-logo/5">{icon}</button>
-                ))}
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-0.5">
-                {STICKERS.map((s) => (
-                  <button key={s} onClick={() => addSticker(s)} className="rounded px-1 py-0.5 text-base transition hover:scale-110 hover:bg-tan/10">{s}</button>
-                ))}
-              </div>
-            </Section>
-          ) },
-          ...(selKind ? [{ symbol: "⚙", label: "Properties", content: (
-            <Section title="Properties">
-              {selKind === "text" && (
-                <div className="space-y-2.5">
-                  <select value={textProps.fontFamily} onChange={(e) => updateText({ fontFamily: e.target.value })}
-                    className="w-full rounded border border-tan/50 bg-white px-2 py-1.5 text-xs text-espresso focus:border-logo focus:outline-none">
-                    {FONTS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
-                  </select>
-                  <label className="block text-[11px] font-medium text-espresso/70">
-                    Size — {textProps.fontSize}px
-                    <input type="range" min={12} max={400} value={textProps.fontSize}
-                      onChange={(e) => updateText({ fontSize: Number(e.target.value) })}
-                      className="mt-1 w-full accent-logo" />
-                  </label>
-                  <div className="flex gap-1">
-                    {(["left", "center", "right"] as const).map((a) => (
-                      <button key={a} onClick={() => updateText({ align: a })}
-                        className={`flex-1 rounded border px-2 py-1 text-xs font-semibold ${textProps.align === a ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
-                        {a === "left" ? "⬅" : a === "center" ? "⬌" : "➡"}
-                      </button>
+        {/* left icon rail — click to open/close a panel */}
+        <div className="absolute left-3 top-3 z-30 flex flex-col gap-1 rounded-2xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
+          {panels.map((p) => (
+            <RailButton key={p.key} icon={p.icon} label={p.title}
+              active={!!openPanels[p.key]} onClick={() => togglePanel(p.key)} />
+          ))}
+        </div>
+
+        {/* open panels stack in a column so they never overlap */}
+        <div className="pointer-events-none absolute left-[4.5rem] top-3 z-20 flex max-h-[calc(100%-1.5rem)] flex-col gap-2 overflow-y-auto pb-2">
+          {panels.filter((p) => openPanels[p.key]).map((p) => (
+            <FloatingPanel key={p.key} title={p.title} icon={p.icon} onClose={() => closePanel(p.key)}>
+              {p.body}
+            </FloatingPanel>
+          ))}
+        </div>
+
+        {/* Layers — always open on the right */}
+        <div className="pointer-events-none absolute right-3 top-3 z-20 w-60">
+          <FloatingPanel title="Layers" icon="layers">
+            {layers.length === 0 ? (
+              <p className="px-3 py-3 text-[11px] text-tan">Add something to see layers.</p>
+            ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onLayersReorder}>
+                <SortableContext items={layers.map((l) => l.id)} strategy={verticalListSortingStrategy}>
+                  <ul className="space-y-1 p-2.5">
+                    {layers.map((l) => (
+                      <LayerRow key={l.id} layer={l}
+                        onSelect={() => selectLayer(l.id)}
+                        onToggle={() => toggleVisible(l.id)} />
                     ))}
-                    <button onClick={() => updateText({ bold: !textProps.bold })}
-                      className={`flex-1 rounded border px-2 py-1 text-xs font-bold ${textProps.bold ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>B</button>
-                  </div>
-                  <Swatches value={textProps.fill} onPick={(c) => updateText({ fill: c })} extra={customColors} onAdd={addCustomColor} />
-                </div>
-              )}
-              {selKind === "shape" && (
-                <ShapeFill extra={customColors} onAdd={addCustomColor}
-                  onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
-              )}
-              <label className="mt-2.5 block text-[11px] font-medium text-espresso/70">
-                Opacity — {opacity}%
-                <input type="range" min={10} max={100} value={opacity}
-                  onChange={(e) => setObjOpacity(Number(e.target.value))}
-                  className="mt-1 w-full accent-logo" />
-              </label>
-              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                <ToolButton onClick={toggleShadow} variant={hasShadow ? "dark" : "ghost"}>Shadow</ToolButton>
-                <ToolButton onClick={duplicateSelected} variant="ghost">Duplicate</ToolButton>
-                <button onClick={deleteSelected}
-                  className="rounded-lg border border-logo/40 px-2 py-1.5 text-xs font-semibold text-orange-light hover:bg-logo/10">Delete</button>
-              </div>
-            </Section>
-          ) }] : []),
-          { symbol: "🎨", label: "Canvas", content: (
-            <Section title="Canvas">
-              <span className="mb-1 block text-[11px] font-medium text-espresso/70">Background</span>
-              <Swatches value={bgColor} onPick={setBackground} extra={customColors} onAdd={addCustomColor} />
-            </Section>
-          ) },
-        ]} />
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            )}
+          </FloatingPanel>
+        </div>
+
+        {/* bottom tool bar */}
+        <div className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
+          <ToolBarButton icon="cursor" label="Select (V)" active={tool === "select"} onClick={() => setTool("select")} />
+          <ToolBarButton icon="text" label="Text — drag to draw (T)" active={tool === "text"} onClick={() => setTool("text")} />
+        </div>
       </div>
     </div>
   );
@@ -884,50 +1043,75 @@ function LayerRow({
     <li ref={setNodeRef} style={style}
       className={`flex items-center gap-1 rounded-lg border bg-white/70 px-1.5 py-1.5 text-xs ${isDragging ? "border-logo/60 shadow" : "border-tan/30"}`}>
       <span {...attributes} {...listeners}
-        className="cursor-grab touch-none px-1 text-tan active:cursor-grabbing" title="Drag to reorder">⠿</span>
+        className="flex cursor-grab touch-none items-center px-0.5 text-tan active:cursor-grabbing" title="Drag to reorder">
+        <Icon name="grip" size={16} />
+      </span>
       <button onClick={onSelect} className="flex-1 truncate text-left text-espresso/80">{layer.name}</button>
-      <button onClick={onToggle} title="Show/hide" className="px-1 text-espresso/50 hover:text-espresso">{layer.visible ? "👁" : "🚫"}</button>
+      <button onClick={onToggle} title="Show/hide" className="px-1 text-espresso/50 hover:text-espresso">
+        <Icon name={layer.visible ? "eye" : "eyeOff"} size={16} />
+      </button>
     </li>
   );
 }
 
-// A thin icon rail; hovering each icon opens its own flyout panel.
-function CollapsibleRail({
-  side, items,
+// One icon button in the left rail. Highlights on hover; stays lit while its
+// panel is open.
+function RailButton({
+  icon, label, active, onClick,
 }: {
-  side: "left" | "right";
-  items: { symbol: string; label: string; content: React.ReactNode }[];
+  icon: IconName; label: string; active: boolean; onClick: () => void;
 }) {
   return (
-    <aside
-      className={`relative z-20 flex w-12 shrink-0 flex-col items-center gap-1 ${
-        side === "left" ? "border-r" : "border-l"
-      } border-tan/30 bg-cream/85 py-3`}
-    >
-      {items.map((it) => (
-        <div key={it.label} className="group/item relative">
-          <button title={it.label}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-base text-espresso/70 transition hover:bg-tan/15 group-hover/item:bg-tan/15">
-            {it.symbol}
-          </button>
-          <div
-            className={`absolute top-0 z-30 max-h-[82vh] w-60 overflow-y-auto rounded-md border border-tan/30 bg-cream/95 opacity-0 shadow-xl transition-all duration-200 pointer-events-none group-hover/item:translate-x-0 group-hover/item:opacity-100 group-hover/item:pointer-events-auto ${
-              side === "left" ? "left-11 -translate-x-2" : "right-11 translate-x-2"
-            }`}
-          >
-            {it.content}
-          </div>
-        </div>
-      ))}
-    </aside>
+    <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
+      className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${
+        active
+          ? "bg-logo/15 text-orange-light"
+          : "text-espresso/70 hover:bg-tan/20 hover:text-espresso"
+      }`}>
+      <Icon name={icon} size={22} />
+    </button>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+// A tool in the bottom bar (Select / Text).
+function ToolBarButton({
+  icon, label, active, onClick,
+}: {
+  icon: IconName; label: string; active: boolean; onClick: () => void;
+}) {
   return (
-    <div className="border-b border-tan/20 px-3 py-3">
-      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-tan">{title}</h3>
-      {children}
+    <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
+      className={`flex h-11 w-11 items-center justify-center rounded-xl transition ${
+        active
+          ? "bg-espresso text-cream"
+          : "text-espresso/70 hover:bg-tan/20 hover:text-espresso"
+      }`}>
+      <Icon name={icon} size={22} />
+    </button>
+  );
+}
+
+// A detached, draggable-feeling floating panel with a title bar and close
+// button. Stacked by the parent so panels never overlap.
+function FloatingPanel({
+  title, icon, onClose, children,
+}: {
+  title: string; icon?: IconName; onClose?: () => void; children: React.ReactNode;
+}) {
+  return (
+    <div className="pointer-events-auto w-60 shrink-0 overflow-hidden rounded-xl border border-tan/30 bg-cream/95 shadow-xl backdrop-blur">
+      <div className="flex items-center justify-between border-b border-tan/20 px-3 py-2">
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-espresso/70">
+          {icon && <Icon name={icon} size={14} />}{title}
+        </span>
+        {onClose && (
+          <button onClick={onClose} title="Close" aria-label={`Close ${title}`}
+            className="rounded p-0.5 text-tan transition hover:bg-tan/15 hover:text-espresso">
+            <Icon name="close" size={14} />
+          </button>
+        )}
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto">{children}</div>
     </div>
   );
 }
@@ -948,7 +1132,7 @@ function ToolButton({ children, onClick, variant = "dark" }: {
 }) {
   return (
     <button onClick={onClick}
-      className={`rounded-lg px-2 py-1.5 text-xs font-semibold transition ${variant === "dark" ? "bg-espresso text-cream hover:bg-espresso/90" : "border border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+      className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${variant === "dark" ? "bg-espresso text-cream hover:bg-espresso/90" : "border border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
       {children}
     </button>
   );
