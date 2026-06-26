@@ -884,16 +884,31 @@ function Swatches({
           className={`h-7 w-7 rounded-md border transition hover:scale-110 ${value.toLowerCase() === c.toLowerCase() ? "border-espresso ring-2 ring-espresso/30" : "border-tan/40"}`}
           style={{ backgroundColor: c }} />
       ))}
-      {onAdd && (
-        <label
-          title="Add a custom color"
-          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-dashed border-tan/60 text-base leading-none text-tan transition hover:border-logo hover:text-logo">
-          +
-          <input type="color" className="sr-only"
-            onChange={(e) => { onAdd(e.target.value); onPick(e.target.value); }} />
-        </label>
-      )}
+      {onAdd && <ColorPlus commit={(c) => { onAdd(c); onPick(c); }} />}
     </div>
+  );
+}
+
+// Native <input type="color"> fires React's onChange on every intermediate
+// color while dragging. We listen to the real `change` event instead, which
+// fires once when the color is committed, so a single pick adds one color.
+function ColorPlus({ commit }: { commit: (c: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const cb = useRef(commit);
+  cb.current = commit;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const handler = () => cb.current(el.value);
+    el.addEventListener("change", handler);
+    return () => el.removeEventListener("change", handler);
+  }, []);
+  return (
+    <label title="Add a custom color"
+      className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-dashed border-tan/60 text-base leading-none text-tan transition hover:border-logo hover:text-logo">
+      +
+      <input ref={ref} type="color" className="sr-only" defaultValue="#D85A30" />
+    </label>
   );
 }
 
