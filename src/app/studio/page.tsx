@@ -41,31 +41,21 @@ export default async function StudioPage() {
     .returns<{ design_id: string; shared_user_id: string }[]>();
 
   return (
-    <div className="min-h-screen">
+    <div className="flex h-screen flex-col">
       <Header
         isAdmin={profile?.role === "admin"}
         email={profile?.email ?? user.email ?? ""}
         active="studio"
       />
 
-      <main className="mx-auto max-w-6xl px-4 py-10">
-        <div className="mb-8">
-          <h1 className="font-serif text-3xl font-bold text-espresso">
-            Social Studio
-          </h1>
-          <p className="mt-1 text-espresso/60">
-            Design graphics for your social posts — pick a format, drop in your
-            logo and text, then download.
-          </p>
-        </div>
-
+      <div className="min-h-0 flex-1">
         <StudioEditor
           initialDesigns={designs ?? []}
           meId={user.id}
           people={(people ?? []).filter((p) => p.id !== user.id)}
           initialShares={shares ?? []}
         />
-      </main>
+      </div>
     </div>
   );
 }
