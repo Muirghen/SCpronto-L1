@@ -83,6 +83,10 @@ export function StudioEditor({
     fontFamily: "Inter", fontSize: 64, fill: "#3A1A0E",
     bold: false, align: "center" as "left" | "center" | "right",
   });
+  // Live mirror so the text tool can read the latest font defaults without
+  // re-binding its canvas handlers.
+  const textPropsRef = useRef(textProps);
+  textPropsRef.current = textProps;
 
   const [designs, setDesigns] = useState<Design[]>(initialDesigns);
   const [designName, setDesignName] = useState("Untitled design");
@@ -95,9 +99,12 @@ export function StudioEditor({
   const [uploadingImg, setUploadingImg] = useState(false);
   // Unsaved-changes indicator (warns before leaving).
   const [dirty, setDirty] = useState(false);
-  // Corner radius (%) for a selected image; bottom-bar shapes popover.
+  // Corner radius (%) for a selected image; bottom-bar shape/sticker popovers.
   const [imgRadius, setImgRadius] = useState(0);
   const [shapesOpen, setShapesOpen] = useState(false);
+  const [stickersOpen, setStickersOpen] = useState(false);
+  const stickersBoxRef = useRef<HTMLDivElement>(null);
+  const [panning, setPanning] = useState(false);
 
   // design_id -> set of user ids it's shared with (owned designs only).
   const [shares, setShares] = useState<Record<string, string[]>>(() => {
@@ -154,19 +161,16 @@ export function StudioEditor({
     setOpenPanels((prev) => ({ ...prev, [key]: false }));
   }
 
-  // Pop the Properties panel open automatically when something is selected.
-  useEffect(() => {
-    if (selKind) setOpenPanels((prev) => (prev.properties ? prev : { ...prev, properties: true }));
-  }, [selKind]);
-
   // Middle-mouse drag pans the view.
   function onWorkspaceMouseDown(e: React.MouseEvent) {
     if (e.button !== 1) return;
     e.preventDefault();
+    setPanning(true);
     const start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
     const move = (ev: MouseEvent) =>
       setView((v) => ({ ...v, x: start.vx + (ev.clientX - start.x), y: start.vy + (ev.clientY - start.y) }));
     const up = () => {
+      setPanning(false);
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     };
@@ -175,21 +179,18 @@ export function StudioEditor({
   }
   function resetView() { setView({ x: 0, y: 0, scale: 1 }); }
 
-  // Ctrl/Cmd + wheel zooms toward the cursor.
+  // Ctrl/Cmd + wheel zooms. Fabric renders the new zoom crisply (see the
+  // apply-zoom effect) rather than CSS-scaling the bitmap.
   useEffect(() => {
     const el = workspaceRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const cx = e.clientX - rect.left - rect.width / 2;
-      const cy = e.clientY - rect.top - rect.height / 2;
-      setView((v) => {
-        const scale = Math.min(5, Math.max(0.15, v.scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
-        const k = scale / v.scale;
-        return { scale, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k };
-      });
+      setView((v) => ({
+        ...v,
+        scale: Math.min(4, Math.max(0.2, v.scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1))),
+      }));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -206,12 +207,14 @@ export function StudioEditor({
       canvas.skipTargetFind = false;
       canvas.selection = true;
       canvas.defaultCursor = "default";
+      canvas.hoverCursor = "move";
       return;
     }
 
     canvas.skipTargetFind = true;
     canvas.selection = false;
     canvas.defaultCursor = "crosshair";
+    canvas.hoverCursor = "crosshair";
     canvas.discardActiveObject();
     canvas.renderAll();
 
@@ -246,14 +249,17 @@ export function StudioEditor({
       const p = point(opt);
       if (preview) { canvas.remove(preview); preview = null; }
       restoringRef.current = false;
+      const { dw } = displaySize(format.w, format.h);
       const drawn = Math.abs(p.x - start.x);
-      const width = drawn < 24 ? canvas.getWidth() * 0.5 : drawn;
+      const width = drawn < 24 ? dw * 0.5 : drawn;
       const left = drawn < 24 ? start.x : Math.min(p.x, start.x);
       const top = Math.min(p.y, start.y);
+      const tp = textPropsRef.current;
       const tb = new fabric.Textbox("Your text", {
         left, top, width,
-        fontSize: 40 * (canvas.getWidth() / format.w),
-        fontFamily: "Inter", fill: "#3A1A0E", textAlign: "left",
+        fontSize: tp.fontSize,
+        fontFamily: tp.fontFamily, fill: tp.fill,
+        fontWeight: tp.bold ? "bold" : "normal", textAlign: tp.align,
       });
       (tb as FabricObject & { id?: string }).id = uid();
       canvas.skipTargetFind = false;
@@ -364,6 +370,7 @@ export function StudioEditor({
       const canvas = new fabric.Canvas(canvasElRef.current, {
         width: dw, height: dh, backgroundColor: bgColor,
         preserveObjectStacking: true,
+        enableRetinaScaling: true,
       });
       fabricRef.current = canvas;
       setDims({ dw, dh });
@@ -405,15 +412,18 @@ export function StudioEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Resize when the format changes.
+  // Apply zoom + format size to the canvas. We size the backing store to the
+  // zoomed dimensions and use Fabric's own zoom, so text, shapes and the
+  // selection handles all re-render crisply instead of being CSS-scaled.
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const { dw, dh } = displaySize(format.w, format.h);
-    canvas.setDimensions({ width: dw, height: dh });
     setDims({ dw, dh });
-    canvas.renderAll();
-  }, [format.w, format.h]);
+    canvas.setDimensions({ width: dw * view.scale, height: dh * view.scale });
+    canvas.setZoom(view.scale);
+    canvas.requestRenderAll();
+  }, [view.scale, format.w, format.h, ready]);
 
   // When deep-linked to a specific design (/studio/d/[id]), open it once the
   // canvas is ready.
@@ -536,6 +546,18 @@ export function StudioEditor({
     return () => document.removeEventListener("mousedown", onDown);
   }, [shapesOpen]);
 
+  // Close the stickers popover when clicking outside it.
+  useEffect(() => {
+    if (!stickersOpen) return;
+    function onDown(e: MouseEvent) {
+      if (stickersBoxRef.current && !stickersBoxRef.current.contains(e.target as Node)) {
+        setStickersOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [stickersOpen]);
+
   /* ---------------- add objects ---------------- */
 
   function add(obj: FabricObject) {
@@ -548,26 +570,34 @@ export function StudioEditor({
     syncSelection(obj);
   }
 
+  // Design (100%) dimensions — independent of the current zoom. All object
+  // placement/sizing uses these so coordinates stay in design space.
+  function pageSize() {
+    return displaySize(format.w, format.h);
+  }
   function center() {
-    const canvas = fabricRef.current!;
-    return { left: canvas.getWidth() / 2, top: canvas.getHeight() / 2, originX: "center" as const, originY: "center" as const };
+    const { dw, dh } = pageSize();
+    return { left: dw / 2, top: dh / 2, originX: "center" as const, originY: "center" as const };
   }
 
   function addText() {
     const fabric = modRef.current, canvas = fabricRef.current;
     if (!fabric || !canvas) return;
+    const { dw } = pageSize();
+    const tp = textPropsRef.current;
     add(new fabric.Textbox("Your text", {
-      ...center(), width: canvas.getWidth() * 0.7,
-      fontSize: 64 * (canvas.getWidth() / format.w),
-      fontFamily: "Inter", fill: "#3A1A0E", textAlign: "center",
+      ...center(), width: dw * 0.7,
+      fontSize: tp.fontSize, fontFamily: tp.fontFamily, fill: tp.fill,
+      fontWeight: tp.bold ? "bold" : "normal", textAlign: tp.align,
     }));
   }
 
   function addSticker(emoji: string) {
     const fabric = modRef.current, canvas = fabricRef.current;
     if (!fabric || !canvas) return;
+    const { dw } = pageSize();
     add(new fabric.Textbox(emoji, {
-      ...center(), fontSize: 120 * (canvas.getWidth() / format.w),
+      ...center(), fontSize: 120 * (dw / format.w),
       fontFamily: "Arial", textAlign: "center",
     }));
   }
@@ -576,7 +606,7 @@ export function StudioEditor({
     const fabric = modRef.current, canvas = fabricRef.current;
     if (!fabric || !canvas) return;
     const img = await fabric.FabricImage.fromURL("/logo.png", { crossOrigin: "anonymous" });
-    const target = canvas.getWidth() * 0.4;
+    const target = pageSize().dw * 0.4;
     img.scale(target / (img.width ?? target));
     img.set(center());
     add(img);
@@ -596,7 +626,7 @@ export function StudioEditor({
       const fabric = modRef.current, canvas = fabricRef.current;
       if (!fabric || !canvas) return;
       const img = await fabric.FabricImage.fromURL(url, { crossOrigin: "anonymous" });
-      const target = canvas.getWidth() * 0.6;
+      const target = pageSize().dw * 0.6;
       img.scale(target / (img.width ?? target));
       img.set(center());
       add(img);
@@ -623,7 +653,7 @@ export function StudioEditor({
   function addShape(kind: "rect" | "circle" | "triangle" | "line" | "star") {
     const fabric = modRef.current, canvas = fabricRef.current;
     if (!fabric || !canvas) return;
-    const s = canvas.getWidth() * 0.3;
+    const s = pageSize().dw * 0.3;
     const common = { ...center(), fill: "#D85A30" };
     if (kind === "rect") add(new fabric.Rect({ ...common, width: s, height: s * 0.7, rx: 8, ry: 8 }));
     else if (kind === "circle") add(new fabric.Circle({ ...common, radius: s / 2 }));
@@ -768,7 +798,7 @@ export function StudioEditor({
   function alignObj(pos: "left" | "centerX" | "right" | "top" | "centerY" | "bottom") {
     const canvas = fabricRef.current, obj = activeObj();
     if (!canvas || !obj) return;
-    const W = canvas.getWidth(), H = canvas.getHeight();
+    const { dw: W, dh: H } = pageSize();
     const r = obj.getBoundingRect();
     let dx = 0, dy = 0;
     if (pos === "left") dx = -r.left;
@@ -788,6 +818,7 @@ export function StudioEditor({
     if (!canvas || !obj) return;
     if (axis === "x") obj.set("flipX", !obj.flipX);
     else obj.set("flipY", !obj.flipY);
+    obj.setCoords();
     canvas.renderAll();
     snapshot();
   }
@@ -924,6 +955,7 @@ export function StudioEditor({
     refreshLayers();
     setCurrentId(undefined);
     setDesignName(starter.label);
+    setView({ x: 0, y: 0, scale: 1 });
   }
 
   /* ---------------- saved designs ---------------- */
@@ -958,6 +990,7 @@ export function StudioEditor({
     redoStack.current = [];
     setCurrentId(d.id);
     setDesignName(d.name);
+    setView({ x: 0, y: 0, scale: 1 });
     markClean();
   }
 
@@ -981,6 +1014,7 @@ export function StudioEditor({
     undoStack.current = [JSON.stringify(canvas.toJSON())];
     redoStack.current = [];
     refreshLayers();
+    setView({ x: 0, y: 0, scale: 1 });
     markClean();
   }
 
@@ -988,113 +1022,81 @@ export function StudioEditor({
     const canvas = fabricRef.current;
     if (!canvas) return;
     if (document.fonts?.ready) await document.fonts.ready;
-    const { scale } = displaySize(format.w, format.h);
+    const { dw, dh, scale } = displaySize(format.w, format.h);
+    // Export at native resolution regardless of the on-screen zoom: drop to
+    // 1:1, render, capture, then restore the current zoom.
+    canvas.setDimensions({ width: dw, height: dh });
+    canvas.setZoom(1);
+    const url = canvas.toDataURL({ format: "png", multiplier: 1 / scale });
+    canvas.setDimensions({ width: dw * view.scale, height: dh * view.scale });
+    canvas.setZoom(view.scale);
+    canvas.requestRenderAll();
     const a = document.createElement("a");
-    a.href = canvas.toDataURL({ format: "png", multiplier: 1 / scale });
+    a.href = url;
     a.download = `${designName.replace(/\s+/g, "-").toLowerCase()}-${format.key}.png`;
     a.click();
   }
 
   /* ============================ UI ============================ */
 
-  // Detachable left-rail panels (Layers lives on the right, always open).
-  const panels: { key: string; title: string; icon: IconName; body: React.ReactNode }[] = [
-    {
-      key: "templates", title: "Templates", icon: "templates",
-      body: (
-        <div className="grid grid-cols-2 gap-1.5 p-3">
-          {STARTERS.map((s) => (
-            <button key={s.key} onClick={() => applyStarter(s)}
-              className="rounded border border-tan/40 px-1.5 py-1.5 text-[11px] font-medium text-espresso/80 transition hover:border-logo hover:bg-logo/5">
-              {s.label}
-            </button>
-          ))}
-        </div>
-      ),
-    },
-    {
-      key: "elements", title: "Elements", icon: "sparkles",
-      body: (
-        <div className="space-y-2 p-3">
-          <div className="grid grid-cols-3 gap-1.5">
-            <ToolButton onClick={addText}><Icon name="text" size={15} /> Text</ToolButton>
-            <ToolButton onClick={addLogo}><Logo size={15} /> Logo</ToolButton>
-            <label className="flex cursor-pointer items-center justify-center gap-1 rounded-lg bg-espresso px-2 py-1.5 text-xs font-semibold text-cream transition hover:bg-espresso/90">
-              <Icon name="image" size={15} /> Img
-              <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
-            </label>
-          </div>
-          <div className="grid grid-cols-5 gap-1">
-            {(["rect", "circle", "triangle", "star", "line"] as const).map((kind) => (
-              <button key={kind} title={`Add ${kind}`} onClick={() => addShape(kind)}
-                className="flex items-center justify-center rounded border border-tan/50 py-2 text-espresso/70 transition hover:border-logo hover:bg-logo/5">
-                <Icon name={kind} size={18} />
+  // Properties / font controls — rendered on the RIGHT (under Layers). Shows
+  // font controls for a selected textbox OR whenever the text tool is active,
+  // so a font can be chosen before drawing the text box.
+  const showFontControls = selKind === "text" || (tool === "text" && !selKind);
+  const propTitle = showFontControls ? "Text" : "Properties";
+  const propertiesBody = (
+    <div className="p-3">
+      {showFontControls && (
+        <div className="space-y-2.5">
+          <select value={textProps.fontFamily} onChange={(e) => updateText({ fontFamily: e.target.value })}
+            className="w-full rounded border border-tan/50 bg-white px-2 py-1.5 text-xs text-espresso focus:border-logo focus:outline-none">
+            {FONTS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
+          </select>
+          <label className="block text-[11px] font-medium text-espresso/70">
+            Size — {textProps.fontSize}px
+            <input type="range" min={12} max={400} value={textProps.fontSize}
+              onChange={(e) => updateText({ fontSize: Number(e.target.value) })}
+              className="mt-1 w-full accent-logo" />
+          </label>
+          <div className="flex gap-1">
+            {(["left", "center", "right"] as const).map((a) => (
+              <button key={a} onClick={() => updateText({ align: a })}
+                className={`flex flex-1 items-center justify-center rounded border px-2 py-1.5 ${textProps.align === a ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+                <Icon name={a === "left" ? "alignLeft" : a === "center" ? "alignCenter" : "alignRight"} size={16} />
               </button>
             ))}
+            <button onClick={() => updateText({ bold: !textProps.bold })}
+              className={`flex flex-1 items-center justify-center rounded border px-2 py-1.5 ${textProps.bold ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+              <Icon name="bold" size={16} />
+            </button>
           </div>
-          <div className="flex flex-wrap gap-0.5">
-            {STICKERS.map((s) => (
-              <button key={s} onClick={() => addSticker(s)} className="rounded px-1 py-0.5 text-lg transition hover:scale-110 hover:bg-tan/10">{s}</button>
-            ))}
-          </div>
+          <Swatches value={textProps.fill} onPick={(c) => updateText({ fill: c })} extra={customColors} onAdd={addCustomColor} />
         </div>
-      ),
-    },
-    {
-      key: "properties", title: "Properties", icon: "sliders",
-      body: !selKind ? (
-        <p className="px-3 py-3 text-[11px] text-tan">Select an element to edit its properties.</p>
-      ) : (
-        <div className="p-3">
-          {selKind === "text" && (
-            <div className="space-y-2.5">
-              <select value={textProps.fontFamily} onChange={(e) => updateText({ fontFamily: e.target.value })}
-                className="w-full rounded border border-tan/50 bg-white px-2 py-1.5 text-xs text-espresso focus:border-logo focus:outline-none">
-                {FONTS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
-              </select>
-              <label className="block text-[11px] font-medium text-espresso/70">
-                Size — {textProps.fontSize}px
-                <input type="range" min={12} max={400} value={textProps.fontSize}
-                  onChange={(e) => updateText({ fontSize: Number(e.target.value) })}
-                  className="mt-1 w-full accent-logo" />
-              </label>
-              <div className="flex gap-1">
-                {(["left", "center", "right"] as const).map((a) => (
-                  <button key={a} onClick={() => updateText({ align: a })}
-                    className={`flex flex-1 items-center justify-center rounded border px-2 py-1.5 ${textProps.align === a ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
-                    <Icon name={a === "left" ? "alignLeft" : a === "center" ? "alignCenter" : "alignRight"} size={16} />
-                  </button>
-                ))}
-                <button onClick={() => updateText({ bold: !textProps.bold })}
-                  className={`flex flex-1 items-center justify-center rounded border px-2 py-1.5 ${textProps.bold ? "border-logo bg-logo/10 text-orange-light" : "border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
-                  <Icon name="bold" size={16} />
-                </button>
-              </div>
-              <Swatches value={textProps.fill} onPick={(c) => updateText({ fill: c })} extra={customColors} onAdd={addCustomColor} />
-            </div>
-          )}
-          {selKind === "shape" && (
-            <ShapeFill extra={customColors} onAdd={addCustomColor}
-              onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
-          )}
-          {selKind === "image" && (
-            <div className="space-y-2.5">
-              <div className="flex flex-wrap gap-1.5">
-                <ToolButton onClick={() => flip("x")} variant="ghost"><Icon name="flipH" size={15} /> Flip H</ToolButton>
-                <ToolButton onClick={() => flip("y")} variant="ghost"><Icon name="flipV" size={15} /> Flip V</ToolButton>
-                <label className="flex cursor-pointer items-center justify-center gap-1 rounded-lg border border-tan/50 px-2 py-1.5 text-xs font-semibold text-espresso/70 transition hover:bg-tan/10">
-                  <Icon name="swap" size={15} /> Replace
-                  <input type="file" accept="image/*" className="hidden" onChange={replaceImage} />
-                </label>
-              </div>
-              <label className="block text-[11px] font-medium text-espresso/70">
-                Rounded corners — {imgRadius}%
-                <input type="range" min={0} max={100} value={imgRadius}
-                  onChange={(e) => setImageRadius(Number(e.target.value))}
-                  className="mt-1 w-full accent-logo" />
-              </label>
-            </div>
-          )}
+      )}
+      {selKind === "shape" && (
+        <ShapeFill extra={customColors} onAdd={addCustomColor}
+          onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
+      )}
+      {selKind === "image" && (
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap gap-1.5">
+            <ToolButton onClick={() => flip("x")} variant="ghost"><Icon name="flipH" size={15} /> Flip H</ToolButton>
+            <ToolButton onClick={() => flip("y")} variant="ghost"><Icon name="flipV" size={15} /> Flip V</ToolButton>
+            <label className="flex cursor-pointer items-center justify-center gap-1 rounded-lg border border-tan/50 px-2 py-1.5 text-xs font-semibold text-espresso/70 transition hover:bg-tan/10">
+              <Icon name="swap" size={15} /> Replace
+              <input type="file" accept="image/*" className="hidden" onChange={replaceImage} />
+            </label>
+          </div>
+          <label className="block text-[11px] font-medium text-espresso/70">
+            Rounded corners — {imgRadius}%
+            <input type="range" min={0} max={100} value={imgRadius}
+              onChange={(e) => setImageRadius(Number(e.target.value))}
+              className="mt-1 w-full accent-logo" />
+          </label>
+        </div>
+      )}
+      {selKind && (
+        <>
           <div className="mt-2.5">
             <span className="mb-1 block text-[11px] font-medium text-espresso/70">Align to canvas</span>
             <div className="flex gap-1">
@@ -1123,6 +1125,26 @@ export function StudioEditor({
               <Icon name="trash" size={15} /> Delete
             </button>
           </div>
+        </>
+      )}
+      {tool === "text" && !selKind && (
+        <p className="mt-3 text-[11px] text-tan">Pick a font, then drag on the canvas to place your text.</p>
+      )}
+    </div>
+  );
+
+  // Left-rail panels (Layers + Properties live on the right).
+  const panels: { key: string; title: string; icon: IconName; body: React.ReactNode }[] = [
+    {
+      key: "templates", title: "Templates", icon: "templates",
+      body: (
+        <div className="grid grid-cols-2 gap-1.5 p-3">
+          {STARTERS.map((s) => (
+            <button key={s.key} onClick={() => applyStarter(s)}
+              className="rounded border border-tan/40 px-1.5 py-1.5 text-[11px] font-medium text-espresso/80 transition hover:border-logo hover:bg-logo/5">
+              {s.label}
+            </button>
+          ))}
         </div>
       ),
     },
@@ -1233,17 +1255,18 @@ export function StudioEditor({
         {/* workspace fills the area; panels float above it */}
         <div ref={workspaceRef} onMouseDown={onWorkspaceMouseDown}
           onDragOver={(e) => e.preventDefault()} onDrop={onWorkspaceDrop}
-          className="absolute inset-0 flex items-center justify-center overflow-hidden">
-          <div style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: "center center" }}>
+          className={`absolute inset-0 flex items-center justify-center overflow-hidden ${panning ? "cursor-grabbing" : ""}`}>
+          {/* Only translate here; zoom is applied by Fabric so it stays crisp. */}
+          <div style={{ transform: `translate(${view.x}px, ${view.y}px)` }}>
             <div className="rounded-md bg-white p-2 shadow-xl ring-1 ring-black/5">
-              <div className="relative" style={{ width: dims.dw, height: dims.dh }}>
+              <div className="relative" style={{ width: dims.dw * view.scale, height: dims.dh * view.scale }}>
                 <canvas ref={canvasElRef} />
                 {showGrid && (
                   <div className="pointer-events-none absolute inset-0"
                     style={{
                       backgroundImage:
                         "linear-gradient(to right, rgba(140,140,140,.4) 1px, transparent 1px), linear-gradient(to bottom, rgba(140,140,140,.4) 1px, transparent 1px)",
-                      backgroundSize: `${GRID}px ${GRID}px`,
+                      backgroundSize: `${GRID * view.scale}px ${GRID * view.scale}px`,
                     }} />
                 )}
               </div>
@@ -1271,8 +1294,13 @@ export function StudioEditor({
           ))}
         </div>
 
-        {/* Layers — always open on the right */}
-        <div className="pointer-events-none absolute right-3 top-3 z-20 w-60">
+        {/* right column: Properties / Text (contextual) above Layers (always) */}
+        <div className="pointer-events-none absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-60 flex-col gap-2 overflow-y-auto pb-2">
+          {(selKind || tool === "text") && (
+            <FloatingPanel title={propTitle} icon="sliders">
+              {propertiesBody}
+            </FloatingPanel>
+          )}
           <FloatingPanel title="Layers" icon="layers">
             {layers.length === 0 ? (
               <p className="px-3 py-3 text-[11px] text-tan">Add something to see layers.</p>
@@ -1336,6 +1364,28 @@ export function StudioEditor({
               </div>
             )}
           </div>
+          <div ref={stickersBoxRef} className="relative">
+            <button title="Stickers" aria-label="Stickers" aria-expanded={stickersOpen}
+              onClick={() => setStickersOpen((v) => !v)}
+              className={`flex h-11 w-11 items-center justify-center rounded-xl transition ${
+                stickersOpen ? "bg-logo/15 text-orange-light" : "text-espresso/70 hover:bg-tan/20 hover:text-espresso"
+              }`}>
+              <Icon name="smiley" size={22} />
+            </button>
+            {stickersOpen && (
+              <div className="absolute bottom-14 left-1/2 grid w-56 -translate-x-1/2 grid-cols-8 gap-1 rounded-xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
+                {STICKERS.map((s) => (
+                  <button key={s} title={`Add ${s}`}
+                    onClick={() => { addSticker(s); setStickersOpen(false); }}
+                    className="flex h-7 w-7 items-center justify-center rounded text-lg transition hover:scale-110 hover:bg-tan/20">{s}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button title="Add logo" aria-label="Add logo" onClick={addLogo}
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-espresso/70 transition hover:bg-tan/20 hover:text-espresso">
+            <Logo size={22} />
+          </button>
         </div>
       </div>
     </div>
