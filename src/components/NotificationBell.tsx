@@ -22,6 +22,7 @@ function timeAgo(iso: string) {
 export function NotificationBell() {
   const [items, setItems] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   const unread = items.filter((n) => !n.read_at).length;
@@ -97,29 +98,49 @@ export function NotificationBell() {
           ) : (
             <ul className="no-scrollbar max-h-96 divide-y divide-tan/20 overflow-y-auto">
               {items.map((n) => {
-                const inner = (
-                  <div className="flex gap-3 px-4 py-3 transition hover:bg-tan/10">
-                    <span
-                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                        n.read_at ? "bg-transparent" : "bg-logo"
-                      }`}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-espresso">{n.title}</p>
-                      {n.body && <p className="mt-0.5 text-sm text-espresso/60">{n.body}</p>}
-                      <p className="mt-0.5 text-[11px] text-tan">{timeAgo(n.created_at)}</p>
-                    </div>
-                  </div>
-                );
+                const isOpen = expandedId === n.id;
                 return (
                   <li key={n.id}>
-                    {n.link ? (
-                      <Link href={n.link} onClick={() => setOpen(false)} className="block">
-                        {inner}
-                      </Link>
-                    ) : (
-                      inner
-                    )}
+                    <div
+                      onClick={() => setExpandedId(isOpen ? null : n.id)}
+                      className="flex cursor-pointer gap-3 px-4 py-3 transition hover:bg-tan/10"
+                    >
+                      <span
+                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                          n.read_at ? "bg-transparent" : "bg-logo"
+                        }`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-semibold text-espresso">{n.title}</p>
+                          {n.body && (
+                            <svg
+                              width="14" height="14" viewBox="0 0 24 24" fill="none"
+                              stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                              strokeLinejoin="round" aria-hidden="true"
+                              className={`mt-1 shrink-0 text-tan transition-transform ${isOpen ? "rotate-180" : ""}`}
+                            >
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          )}
+                        </div>
+                        {n.body && (
+                          <p className={`mt-0.5 text-sm text-espresso/60 ${isOpen ? "" : "line-clamp-1"}`}>
+                            {n.body}
+                          </p>
+                        )}
+                        <p className="mt-0.5 text-[11px] text-tan">{timeAgo(n.created_at)}</p>
+                        {isOpen && n.link && (
+                          <Link
+                            href={n.link}
+                            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+                            className="mt-2 inline-flex rounded-lg bg-espresso px-2.5 py-1 text-xs font-semibold text-cream transition hover:bg-espresso/90 active:scale-95"
+                          >
+                            View →
+                          </Link>
+                        )}
+                      </div>
+                    </div>
                   </li>
                 );
               })}
