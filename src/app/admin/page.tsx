@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Header } from "@/components/Header";
 import { AppIcon } from "@/components/AppIcon";
+import { Avatar } from "@/components/Avatar";
 import { Field, Button } from "@/components/ui";
 import type { AppTile, Profile } from "@/lib/types";
 import {
@@ -42,7 +43,7 @@ export default async function AdminPage() {
 
   return (
     <div className="min-h-screen">
-      <Header isAdmin email={me.email} active="admin" />
+      <Header isAdmin email={me.email} fullName={me.full_name} avatarUrl={me.avatar_url} active="admin" />
 
       <main className="mx-auto max-w-6xl space-y-12 px-4 py-10">
         <div>
@@ -53,6 +54,62 @@ export default async function AdminPage() {
             Appoint admins, manage employee access, and curate the app catalog.
           </p>
         </div>
+
+        {/* ---------------- Pending approvals ---------------- */}
+        {(() => {
+          const pending = people?.filter((p) => p.status === "pending") ?? [];
+          return (
+            <section>
+              <h2 className="mb-1 font-serif text-xl font-semibold text-espresso">
+                Pending approvals
+                {pending.length > 0 && (
+                  <span className="ml-2 rounded-full bg-logo px-2 py-0.5 text-xs font-bold text-cream">
+                    {pending.length}
+                  </span>
+                )}
+              </h2>
+              <p className="mb-4 text-sm text-espresso/60">
+                New sign-ups can&apos;t access the portal until you approve them.
+              </p>
+              {pending.length === 0 ? (
+                <p className="rounded-card border border-dashed border-tan/60 bg-white/50 p-6 text-center text-sm text-espresso/60">
+                  No one is waiting for approval.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {pending.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex flex-wrap items-center gap-3 rounded-card border border-logo/30 bg-white/70 p-3"
+                    >
+                      <Avatar name={p.full_name} email={p.email} url={p.avatar_url} size={40} />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-espresso">{p.full_name || "—"}</p>
+                        <p className="truncate text-sm text-espresso/60">{p.email}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <form action={setStatus}>
+                          <input type="hidden" name="user_id" value={p.id} />
+                          <input type="hidden" name="status" value="active" />
+                          <Button variant="primary" className="px-3 py-1.5 text-xs">
+                            Approve
+                          </Button>
+                        </form>
+                        <form action={setStatus}>
+                          <input type="hidden" name="user_id" value={p.id} />
+                          <input type="hidden" name="status" value="disabled" />
+                          <Button variant="ghost" className="px-3 py-1.5 text-xs">
+                            Reject
+                          </Button>
+                        </form>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          );
+        })()}
 
         {/* ---------------- People ---------------- */}
         <section>
@@ -71,15 +128,20 @@ export default async function AdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-tan/30">
-                {people?.map((p) => {
+                {people?.filter((p) => p.status !== "pending").map((p) => {
                   const isSelf = p.id === me.id;
                   return (
                     <tr key={p.id}>
                       <td className="px-4 py-3 font-medium text-espresso">
-                        {p.full_name || "—"}
-                        {isSelf && (
-                          <span className="ml-1.5 text-xs text-tan">(you)</span>
-                        )}
+                        <span className="flex items-center gap-2.5">
+                          <Avatar name={p.full_name} email={p.email} url={p.avatar_url} size={30} />
+                          <span>
+                            {p.full_name || "—"}
+                            {isSelf && (
+                              <span className="ml-1.5 text-xs text-tan">(you)</span>
+                            )}
+                          </span>
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-espresso/70">{p.email}</td>
                       <td className="px-4 py-3">

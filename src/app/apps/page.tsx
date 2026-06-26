@@ -22,6 +22,8 @@ export default async function LibraryPage() {
     .eq("id", user.id)
     .single<Profile>();
 
+  if (profile?.status === "pending") redirect("/pending");
+
   if (profile?.status === "disabled") {
     return (
       <main className="flex min-h-screen items-center justify-center px-4 text-center">
@@ -54,6 +56,8 @@ export default async function LibraryPage() {
       <Header
         isAdmin={profile?.role === "admin"}
         email={profile?.email ?? user.email ?? ""}
+        fullName={profile?.full_name}
+        avatarUrl={profile?.avatar_url}
         active="library"
       />
 

@@ -27,6 +27,9 @@ export default async function ToolPage({
     .eq("id", user.id)
     .single<Profile>();
 
+  if (me?.status === "pending") redirect("/pending");
+  if (me?.status === "disabled") redirect("/apps");
+
   const { data: app } = await supabase
     .from("apps")
     .select("*")
@@ -38,6 +41,8 @@ export default async function ToolPage({
       <Header
         isAdmin={me?.role === "admin"}
         email={me?.email ?? ""}
+        fullName={me?.full_name}
+        avatarUrl={me?.avatar_url}
         active="library"
       />
       <main className="mx-auto max-w-6xl px-4 py-10">

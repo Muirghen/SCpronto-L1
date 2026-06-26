@@ -60,16 +60,17 @@ export async function signUp(
     return { error: error.message };
   }
 
-  // If email confirmation is enabled there is no active session yet.
+  // New accounts start as "pending" and need an admin to approve them. If email
+  // confirmation is also on there's no session yet, so surface a message.
   if (!data.session) {
     return {
       message:
-        "Account created. Check your inbox to confirm your email, then sign in.",
+        "Account created. Confirm your email, then wait for an admin to approve your account.",
     };
   }
 
   revalidatePath("/", "layout");
-  redirect("/apps");
+  redirect("/pending");
 }
 
 export async function signOut() {

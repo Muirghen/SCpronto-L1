@@ -5,11 +5,11 @@ import { loadStudio } from "./data";
 export const dynamic = "force-dynamic";
 
 export default async function StudioPage() {
-  const { meId, email, isAdmin, designs, people } = await loadStudio();
+  const { meId, email, fullName, avatarUrl, isAdmin, designs, people } = await loadStudio();
 
   return (
     <div className="min-h-screen">
-      <Header isAdmin={isAdmin} email={email} active="studio" />
+      <Header isAdmin={isAdmin} email={email} fullName={fullName} avatarUrl={avatarUrl} active="studio" />
       <StudioHome meId={meId} designs={designs} people={people} />
     </div>
   );

@@ -1,5 +1,5 @@
 export type Role = "employee" | "admin";
-export type Status = "active" | "disabled";
+export type Status = "active" | "disabled" | "pending";
 export type AppKind = "link" | "embedded";
 
 export type Profile = {
@@ -8,6 +8,7 @@ export type Profile = {
   full_name: string | null;
   role: Role;
   status: Status;
+  avatar_url: string | null;
   created_at: string;
 };
 

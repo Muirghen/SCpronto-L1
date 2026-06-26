@@ -7,6 +7,8 @@ export type Person = { id: string; full_name: string | null; email: string };
 export type StudioData = {
   meId: string;
   email: string;
+  fullName: string | null;
+  avatarUrl: string | null;
   isAdmin: boolean;
   designs: Design[];
   people: Person[];
@@ -31,6 +33,7 @@ export async function loadStudio(): Promise<StudioData> {
     .eq("id", user.id)
     .single<Profile>();
 
+  if (profile?.status === "pending") redirect("/pending");
   if (profile?.status === "disabled") redirect("/apps");
 
   const { data: designs } = await supabase
@@ -53,6 +56,8 @@ export async function loadStudio(): Promise<StudioData> {
   return {
     meId: user.id,
     email: profile?.email ?? user.email ?? "",
+    fullName: profile?.full_name ?? null,
+    avatarUrl: profile?.avatar_url ?? null,
     isAdmin: profile?.role === "admin",
     designs: designs ?? [],
     people: (people ?? []).filter((p) => p.id !== user.id),

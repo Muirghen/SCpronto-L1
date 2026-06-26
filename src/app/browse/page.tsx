@@ -21,6 +21,7 @@ export default async function BrowsePage() {
     .eq("id", user.id)
     .single<Profile>();
 
+  if (profile?.status === "pending") redirect("/pending");
   if (profile?.status === "disabled") redirect("/apps");
 
   const { data: apps } = await supabase
@@ -43,6 +44,8 @@ export default async function BrowsePage() {
       <Header
         isAdmin={profile?.role === "admin"}
         email={profile?.email ?? user.email ?? ""}
+        fullName={profile?.full_name}
+        avatarUrl={profile?.avatar_url}
         active="browse"
       />
 
