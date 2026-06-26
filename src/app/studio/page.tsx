@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Header } from "@/components/Header";
 import { StudioEditor } from "@/components/StudioEditor";
 import type { Design, Profile } from "@/lib/types";
 
@@ -41,21 +40,13 @@ export default async function StudioPage() {
     .returns<{ design_id: string; shared_user_id: string }[]>();
 
   return (
-    <div className="flex h-screen flex-col">
-      <Header
-        isAdmin={profile?.role === "admin"}
-        email={profile?.email ?? user.email ?? ""}
-        active="studio"
+    <div className="h-screen">
+      <StudioEditor
+        initialDesigns={designs ?? []}
+        meId={user.id}
+        people={(people ?? []).filter((p) => p.id !== user.id)}
+        initialShares={shares ?? []}
       />
-
-      <div className="min-h-0 flex-1">
-        <StudioEditor
-          initialDesigns={designs ?? []}
-          meId={user.id}
-          people={(people ?? []).filter((p) => p.id !== user.id)}
-          initialShares={shares ?? []}
-        />
-      </div>
     </div>
   );
 }

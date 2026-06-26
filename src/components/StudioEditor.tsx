@@ -9,7 +9,9 @@ import {
   SortableContext, arrayMove, verticalListSortingStrategy, useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import Link from "next/link";
 import type { Canvas as FabricCanvas, FabricObject } from "fabric";
+import { Logo } from "@/components/Logo";
 import type { Design } from "@/lib/types";
 import {
   FORMATS, PALETTE, FONTS, STICKERS, STARTERS,
@@ -115,7 +117,47 @@ export function StudioEditor({
 
   const format = FORMATS.find((f) => f.key === formatKey) ?? FORMATS[0];
 
+  // Pan/zoom of the workspace (CSS transform on the artboard wrapper).
+  const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => { snapRef.current = snap; }, [snap]);
+
+  // Middle-mouse drag pans the view.
+  function onWorkspaceMouseDown(e: React.MouseEvent) {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    const start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+    const move = (ev: MouseEvent) =>
+      setView((v) => ({ ...v, x: start.vx + (ev.clientX - start.x), y: start.vy + (ev.clientY - start.y) }));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+  function resetView() { setView({ x: 0, y: 0, scale: 1 }); }
+
+  // Ctrl/Cmd + wheel zooms toward the cursor.
+  useEffect(() => {
+    const el = workspaceRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      setView((v) => {
+        const scale = Math.min(5, Math.max(0.15, v.scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+        const k = scale / v.scale;
+        return { scale, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k };
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   /* ---------------- helpers that read/refresh the canvas ---------------- */
 
@@ -599,7 +641,12 @@ export function StudioEditor({
   return (
     <div className="flex h-full flex-col bg-cream text-espresso">
       {/* ---- top toolbar ---- */}
-      <div className="flex items-center gap-1.5 border-b border-tan/30 bg-cream/90 px-3 py-1.5">
+      <div className="flex items-center gap-1.5 border-b border-tan/30 bg-cream/90 px-2 py-1.5">
+        <Link href="/apps" title="Back to portal"
+          className="mr-1 flex items-center rounded px-1.5 py-1 transition hover:bg-tan/15">
+          <Logo size={22} />
+        </Link>
+        <span className="mx-0.5 h-5 w-px bg-tan/30" />
         <TopBtn onClick={undo} title="Undo (Ctrl+Z)">↶</TopBtn>
         <TopBtn onClick={redo} title="Redo (Ctrl+Shift+Z)">↷</TopBtn>
         <span className="mx-1 h-5 w-px bg-tan/30" />
@@ -612,6 +659,7 @@ export function StudioEditor({
             <option key={f.key} value={f.key}>{f.label} — {f.w}×{f.h}</option>
           ))}
         </select>
+        <TopBtn onClick={resetView} title="Reset zoom">{Math.round(view.scale * 100)}%</TopBtn>
         <div className="flex-1" />
         <input value={designName} onChange={(e) => setDesignName(e.target.value)}
           className="w-44 rounded border border-tan/40 bg-white px-2.5 py-1 text-xs text-espresso focus:border-logo focus:outline-none" />
@@ -624,9 +672,9 @@ export function StudioEditor({
       </div>
 
       {/* ---- body: left | canvas | right ---- */}
-      <div className="flex min-h-0 flex-1">
-        {/* left: templates, layers, files */}
-        <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-tan/30 bg-cream/70">
+      <div className="relative flex min-h-0 flex-1">
+        {/* left rail: templates, layers, files */}
+        <CollapsibleRail side="left" items={[{ symbol: "▦", label: "Templates" }, { symbol: "≣", label: "Layers" }, { symbol: "🗂", label: "Files" }]}>
           <Section title="Templates">
             <div className="grid grid-cols-2 gap-1.5">
               {STARTERS.map((s) => (
@@ -698,27 +746,33 @@ export function StudioEditor({
               </ul>
             </Section>
           )}
-        </aside>
+        </CollapsibleRail>
 
         {/* center workspace */}
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#E2D8C6] p-6">
-          <div className="rounded-md bg-white p-2 shadow-xl ring-1 ring-black/5">
-            <div className="relative" style={{ width: dims.dw, height: dims.dh }}>
-              <canvas ref={canvasElRef} />
-              {showGrid && (
-                <div className="pointer-events-none absolute inset-0"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(to right, rgba(140,140,140,.4) 1px, transparent 1px), linear-gradient(to bottom, rgba(140,140,140,.4) 1px, transparent 1px)",
-                    backgroundSize: `${GRID}px ${GRID}px`,
-                  }} />
-              )}
+        <div ref={workspaceRef} onMouseDown={onWorkspaceMouseDown}
+          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-[#E2D8C6]">
+          <div style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: "center center" }}>
+            <div className="rounded-md bg-white p-2 shadow-xl ring-1 ring-black/5">
+              <div className="relative" style={{ width: dims.dw, height: dims.dh }}>
+                <canvas ref={canvasElRef} />
+                {showGrid && (
+                  <div className="pointer-events-none absolute inset-0"
+                    style={{
+                      backgroundImage:
+                        "linear-gradient(to right, rgba(140,140,140,.4) 1px, transparent 1px), linear-gradient(to bottom, rgba(140,140,140,.4) 1px, transparent 1px)",
+                      backgroundSize: `${GRID}px ${GRID}px`,
+                    }} />
+                )}
+              </div>
             </div>
+          </div>
+          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-espresso/70 px-3 py-1 text-[11px] text-cream">
+            Middle-drag to pan • Ctrl + scroll to zoom
           </div>
         </div>
 
-        {/* right: add + properties + canvas */}
-        <aside className="flex w-64 shrink-0 flex-col overflow-y-auto border-l border-tan/30 bg-cream/70">
+        {/* right rail: add + properties + canvas */}
+        <CollapsibleRail side="right" items={[{ symbol: "＋", label: "Add" }, { symbol: "⚙", label: "Properties" }, { symbol: "🎨", label: "Canvas" }]}>
           <Section title="Add">
             <div className="grid grid-cols-3 gap-1.5">
               <ToolButton onClick={addText}>＋ Text</ToolButton>
@@ -791,7 +845,7 @@ export function StudioEditor({
             <span className="mb-1 block text-[11px] font-medium text-espresso/70">Background</span>
             <Swatches value={bgColor} onPick={setBackground} extra={customColors} onAdd={addCustomColor} />
           </Section>
-        </aside>
+        </CollapsibleRail>
       </div>
     </div>
   );
@@ -830,6 +884,37 @@ function LayerRow({
       <button onClick={onSelect} className="flex-1 truncate text-left text-espresso/80">{layer.name}</button>
       <button onClick={onToggle} title="Show/hide" className="px-1 text-espresso/50 hover:text-espresso">{layer.visible ? "👁" : "🚫"}</button>
     </li>
+  );
+}
+
+// A thin icon rail that expands into a flyout panel on hover.
+function CollapsibleRail({
+  side, items, children,
+}: {
+  side: "left" | "right";
+  items: { symbol: string; label: string }[];
+  children: React.ReactNode;
+}) {
+  return (
+    <aside
+      className={`group relative z-20 flex w-12 shrink-0 flex-col items-center gap-1 ${
+        side === "left" ? "border-r" : "border-l"
+      } border-tan/30 bg-cream/85 py-3`}
+    >
+      {items.map((it) => (
+        <div key={it.label} title={it.label}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-base text-espresso/70 transition group-hover:bg-tan/10">
+          {it.symbol}
+        </div>
+      ))}
+      <div
+        className={`absolute top-0 h-full w-60 overflow-y-auto border-tan/30 bg-cream/95 opacity-0 shadow-xl backdrop-blur transition-all duration-200 pointer-events-none group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto ${
+          side === "left" ? "left-12 -translate-x-3 border-r" : "right-12 translate-x-3 border-l"
+        }`}
+      >
+        {children}
+      </div>
+    </aside>
   );
 }
 
