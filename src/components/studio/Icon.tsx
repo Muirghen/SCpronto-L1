@@ -36,7 +36,9 @@ export type IconName =
   | "share"
   | "save"
   | "download"
-  | "newFile";
+  | "newFile"
+  | "calendar"
+  | "send";
 
 const FILLED: ReadonlySet<IconName> = new Set<IconName>(["cursor", "star"]);
 
@@ -201,6 +203,19 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M6 3h7l5 5v13H6z" />
       <path d="M13 3v5h5" />
       <path d="M12 11.5v5M9.5 14h5" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3.5" y="5" width="17" height="16" rx="2.5" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+      <path d="M7.5 13h3v3h-3z" />
+    </>
+  ),
+  send: (
+    <>
+      <path d="M21 3 10.5 13.5" />
+      <path d="M21 3 14.5 21l-4-7.5L3 9.5z" />
     </>
   ),
 };

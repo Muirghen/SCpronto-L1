@@ -43,11 +43,13 @@ export function StudioEditor({
   meId,
   people,
   initialShares,
+  openId,
 }: {
   initialDesigns: Design[];
   meId: string;
   people: Person[];
   initialShares: { design_id: string; shared_user_id: string }[];
+  openId?: string;
 }) {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
@@ -80,6 +82,9 @@ export function StudioEditor({
   const [designName, setDesignName] = useState("Untitled design");
   const [currentId, setCurrentId] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  // True once Fabric has finished initializing the canvas.
+  const [ready, setReady] = useState(false);
+  const openedRef = useRef(false);
 
   // design_id -> set of user ids it's shared with (owned designs only).
   const [shares, setShares] = useState<Record<string, string[]>>(() => {
@@ -354,6 +359,7 @@ export function StudioEditor({
       });
 
       undoStack.current = [JSON.stringify(canvas.toJSON())];
+      setReady(true);
     })();
 
     return () => {
@@ -374,6 +380,18 @@ export function StudioEditor({
     setDims({ dw, dh });
     canvas.renderAll();
   }, [format.w, format.h]);
+
+  // When deep-linked to a specific design (/studio/d/[id]), open it once the
+  // canvas is ready.
+  useEffect(() => {
+    if (!ready || !openId || openedRef.current) return;
+    const d = initialDesigns.find((x) => x.id === openId);
+    if (d) {
+      openedRef.current = true;
+      openDesign(d);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, openId]);
 
   /* ---------------- undo / redo ---------------- */
 
@@ -906,7 +924,7 @@ export function StudioEditor({
     <div className="flex h-full flex-col bg-cream text-espresso">
       {/* ---- top toolbar ---- */}
       <div className="flex items-center gap-1.5 border-b border-tan/30 bg-cream/90 px-2 py-1.5">
-        <Link href="/apps" title="Back to portal"
+        <Link href="/studio" title="Back to Studio"
           className="mr-1 flex items-center rounded px-1.5 py-1 transition hover:bg-tan/15">
           <Logo size={22} />
         </Link>

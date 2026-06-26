@@ -1,52 +1,16 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { StudioEditor } from "@/components/StudioEditor";
-import type { Design, Profile } from "@/lib/types";
+import { Header } from "@/components/Header";
+import { StudioHome } from "@/components/StudioHome";
+import { loadStudio } from "./data";
 
 export const dynamic = "force-dynamic";
 
 export default async function StudioPage() {
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single<Profile>();
-
-  if (profile?.status === "disabled") redirect("/apps");
-
-  // RLS returns designs the user owns *and* designs shared with them.
-  const { data: designs } = await supabase
-    .from("designs")
-    .select("*")
-    .order("updated_at", { ascending: false })
-    .returns<Design[]>();
-
-  // Colleagues to share with, and the current share memberships.
-  const { data: people } = await supabase
-    .from("profiles")
-    .select("id, full_name, email")
-    .order("full_name", { ascending: true })
-    .returns<{ id: string; full_name: string | null; email: string }[]>();
-
-  const { data: shares } = await supabase
-    .from("design_shares")
-    .select("design_id, shared_user_id")
-    .returns<{ design_id: string; shared_user_id: string }[]>();
+  const { meId, email, isAdmin, designs, people } = await loadStudio();
 
   return (
-    <div className="h-screen">
-      <StudioEditor
-        initialDesigns={designs ?? []}
-        meId={user.id}
-        people={(people ?? []).filter((p) => p.id !== user.id)}
-        initialShares={shares ?? []}
-      />
+    <div className="min-h-screen">
+      <Header isAdmin={isAdmin} email={email} active="studio" />
+      <StudioHome meId={meId} designs={designs} people={people} />
     </div>
   );
 }
