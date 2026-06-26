@@ -12,13 +12,13 @@ export function Header({
   active: "library" | "browse" | "admin" | "studio";
 }) {
   return (
-    <header className="border-b border-tan/30 bg-cream/80 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5">
-        <Link href="/apps">
-          <Logo size={34} withWordmark />
+    <header className="sticky top-0 z-40 border-b border-tan/30 bg-cream/80 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-y-2 px-4 py-3">
+        <Link href="/apps" className="transition hover:opacity-80">
+          <Logo size={32} withWordmark />
         </Link>
 
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="no-scrollbar flex max-w-full items-center gap-0.5 overflow-x-auto text-sm sm:gap-1">
           <Link
             href="/apps"
             className={`rounded-lg px-3 py-1.5 font-medium ${

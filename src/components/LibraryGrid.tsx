@@ -157,7 +157,7 @@ function CardFace({ app, dragging }: { app: AppTile; dragging?: boolean }) {
       className={`flex h-full min-h-[150px] flex-col rounded-card border bg-white/85 p-4 transition ${
         dragging
           ? "cursor-grabbing border-logo/60 shadow-xl"
-          : "border-tan/40 hover:border-logo/60 hover:shadow-md"
+          : "animate-fade-in border-tan/40 hover:-translate-y-0.5 hover:border-logo/60 hover:shadow-md"
       }`}
     >
       <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-cream text-xl">

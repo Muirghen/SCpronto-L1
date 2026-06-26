@@ -50,7 +50,8 @@ export type IconName =
   | "alignObjTop"
   | "alignObjCenterY"
   | "alignObjBottom"
-  | "smiley";
+  | "smiley"
+  | "check";
 
 const FILLED: ReadonlySet<IconName> = new Set<IconName>(["cursor", "star", "sparkles"]);
 
@@ -322,6 +323,7 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M9 9.5h.01M15 9.5h.01" strokeWidth="2.2" />
     </>
   ),
+  check: <path d="M5 12.5 10 17.5 19 6.5" strokeWidth="2.2" />,
 };
 
 export function Icon({

@@ -99,6 +99,8 @@ export function StudioEditor({
   const [uploadingImg, setUploadingImg] = useState(false);
   // Unsaved-changes indicator (warns before leaving).
   const [dirty, setDirty] = useState(false);
+  // Brief "Saved" confirmation on the Save button.
+  const [savedFlash, setSavedFlash] = useState(false);
   // Corner radius (%) for a selected image; bottom-bar shape/sticker popovers.
   const [imgRadius, setImgRadius] = useState(0);
   const [shapesOpen, setShapesOpen] = useState(false);
@@ -975,6 +977,8 @@ export function StudioEditor({
         return [saved, ...without];
       });
       markClean();
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1600);
     } finally {
       setBusy(false);
     }
@@ -1226,7 +1230,7 @@ export function StudioEditor({
   return (
     <div className="flex h-full flex-col bg-cream text-espresso">
       {/* ---- top toolbar ---- */}
-      <div className="flex items-center gap-1.5 border-b border-tan/30 bg-cream/90 px-2 py-1.5">
+      <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto border-b border-tan/30 bg-cream/90 px-2 py-1.5 [&>*]:shrink-0">
         <Link href="/studio" title="Back to Studio"
           onClick={(e) => {
             if (dirtyRef.current && !window.confirm("Leave without saving? Your changes will be lost.")) {
@@ -1252,15 +1256,15 @@ export function StudioEditor({
         <TopBtn onClick={resetView} title="Reset zoom">{Math.round(view.scale * 100)}%</TopBtn>
         <div className="flex-1" />
         <input value={designName} onChange={(e) => setDesignName(e.target.value)}
-          className="w-44 rounded border border-tan/40 bg-white px-2.5 py-1 text-xs text-espresso focus:border-logo focus:outline-none" />
+          className="w-28 rounded border border-tan/40 bg-white px-2.5 py-1 text-xs text-espresso focus:border-logo focus:outline-none sm:w-44" />
         <button onClick={newDesign} title="New design"
           className="flex items-center gap-1.5 rounded border border-tan/40 px-2.5 py-1 text-xs font-semibold text-espresso/70 hover:bg-tan/10">
           <Icon name="newFile" size={16} /> New
         </button>
         <button onClick={doSave} disabled={busy} title={dirty ? "Unsaved changes" : "Save design"}
-          className="flex items-center gap-1.5 rounded bg-espresso px-3 py-1 text-xs font-semibold text-cream hover:bg-espresso/90 disabled:opacity-60">
-          <Icon name="save" size={16} /> {busy ? "Saving…" : "Save"}
-          {dirty && !busy && <span className="h-1.5 w-1.5 rounded-full bg-orange-dark" />}
+          className={`flex items-center gap-1.5 rounded px-3 py-1 text-xs font-semibold text-cream transition active:scale-95 disabled:opacity-60 ${savedFlash ? "bg-green-700" : "bg-espresso hover:bg-espresso/90"}`}>
+          <Icon name={savedFlash ? "check" : "save"} size={16} /> {busy ? "Saving…" : savedFlash ? "Saved" : "Save"}
+          {dirty && !busy && !savedFlash && <span className="h-1.5 w-1.5 rounded-full bg-orange-dark" />}
         </button>
         <button onClick={download} title="Export PNG"
           className="flex items-center gap-1.5 rounded bg-logo px-3 py-1 text-xs font-bold text-cream hover:bg-orange-light">
@@ -1273,7 +1277,9 @@ export function StudioEditor({
         {/* workspace fills the area; panels float above it */}
         <div ref={workspaceRef} onMouseDown={onWorkspaceMouseDown}
           onDragOver={(e) => e.preventDefault()} onDrop={onWorkspaceDrop}
-          className={`absolute inset-0 flex items-center justify-center overflow-hidden ${panning ? "cursor-grabbing" : ""}`}>
+          className={`absolute inset-0 flex items-center justify-center overflow-hidden ${
+            panning ? "cursor-grabbing" : tool === "text" ? "cursor-crosshair" : ""
+          }`}>
           {/* Only translate here; zoom is applied by Fabric so it stays crisp. */}
           <div style={{ transform: `translate(${view.x}px, ${view.y}px)` }}>
             <div className="rounded-md bg-white p-2 shadow-xl ring-1 ring-black/5">
@@ -1371,7 +1377,7 @@ export function StudioEditor({
               <Icon name="shapes" size={22} />
             </button>
             {shapesOpen && (
-              <div className="absolute bottom-14 left-1/2 flex -translate-x-1/2 gap-1 rounded-xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
+              <div className="animate-pop absolute bottom-14 left-1/2 flex -translate-x-1/2 gap-1 rounded-xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
                 {(["rect", "circle", "triangle", "star", "line"] as const).map((kind) => (
                   <button key={kind} title={`Add ${kind}`}
                     onClick={() => { addShape(kind); setShapesOpen(false); }}
@@ -1391,7 +1397,7 @@ export function StudioEditor({
               <Icon name="smiley" size={22} />
             </button>
             {stickersOpen && (
-              <div className="absolute bottom-14 left-1/2 grid w-56 -translate-x-1/2 grid-cols-8 gap-1 rounded-xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
+              <div className="animate-pop absolute bottom-14 left-1/2 grid w-56 -translate-x-1/2 grid-cols-8 gap-1 rounded-xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
                 {STICKERS.map((s) => (
                   <button key={s} title={`Add ${s}`}
                     onClick={() => { addSticker(s); setStickersOpen(false); }}
@@ -1459,7 +1465,7 @@ function RailButton({
 }) {
   return (
     <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
-      className={`flex h-10 w-10 items-center justify-center rounded-xl transition ${
+      className={`flex h-10 w-10 items-center justify-center rounded-xl transition active:scale-90 ${
         active
           ? "bg-logo/15 text-orange-light"
           : "text-espresso/70 hover:bg-tan/20 hover:text-espresso"
@@ -1477,7 +1483,7 @@ function ToolBarButton({
 }) {
   return (
     <button onClick={onClick} title={label} aria-label={label} aria-pressed={active}
-      className={`flex h-11 w-11 items-center justify-center rounded-xl transition ${
+      className={`flex h-11 w-11 items-center justify-center rounded-xl transition active:scale-90 ${
         active
           ? "bg-espresso text-cream"
           : "text-espresso/70 hover:bg-tan/20 hover:text-espresso"
@@ -1495,7 +1501,7 @@ function FloatingPanel({
   title: string; icon?: IconName; onClose?: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className="pointer-events-auto w-60 shrink-0 overflow-hidden rounded-xl border border-tan/30 bg-cream/95 shadow-xl backdrop-blur">
+    <div className="animate-fade-in pointer-events-auto w-60 shrink-0 overflow-hidden rounded-xl border border-tan/30 bg-cream/95 shadow-xl backdrop-blur">
       <div className="flex items-center justify-between border-b border-tan/20 px-3 py-2">
         <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-espresso/70">
           {icon && <Icon name={icon} size={14} />}{title}
@@ -1517,7 +1523,7 @@ function TopBtn({ children, onClick, title, active }: {
 }) {
   return (
     <button onClick={onClick} title={title}
-      className={`rounded px-2 py-1 text-sm ${active ? "bg-logo/15 text-orange-light" : "text-espresso/70 hover:bg-tan/15"}`}>
+      className={`rounded px-2 py-1 text-sm transition active:scale-90 ${active ? "bg-logo/15 text-orange-light" : "text-espresso/70 hover:bg-tan/15"}`}>
       {children}
     </button>
   );
@@ -1528,7 +1534,7 @@ function ToolButton({ children, onClick, variant = "dark" }: {
 }) {
   return (
     <button onClick={onClick}
-      className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ${variant === "dark" ? "bg-espresso text-cream hover:bg-espresso/90" : "border border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
+      className={`flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition active:scale-95 ${variant === "dark" ? "bg-espresso text-cream hover:bg-espresso/90" : "border border-tan/50 text-espresso/70 hover:bg-tan/10"}`}>
       {children}
     </button>
   );

@@ -145,10 +145,10 @@ function AppCard({
   const inner = (
     <div
       className={clsx(
-        "flex h-full flex-col rounded-card border p-5 transition",
+        "animate-fade-in flex h-full flex-col rounded-card border p-5 transition",
         soon
           ? "border-tan/40 bg-white/40"
-          : "border-tan/40 bg-white/70 hover:border-logo hover:shadow-sm",
+          : "border-tan/40 bg-white/70 hover:-translate-y-0.5 hover:border-logo hover:shadow-md",
       )}
     >
       <div className="flex items-center gap-3">
@@ -183,7 +183,7 @@ function DesignCard({
   return (
     <div
       className={clsx(
-        "group overflow-hidden rounded-card border border-tan/40 bg-white/70 transition hover:border-logo hover:shadow-sm",
+        "group animate-fade-in overflow-hidden rounded-card border border-tan/40 bg-white/70 transition hover:-translate-y-0.5 hover:border-logo hover:shadow-md",
         busy && "pointer-events-none opacity-50",
       )}
     >

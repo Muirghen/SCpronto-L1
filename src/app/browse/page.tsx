@@ -73,7 +73,7 @@ export default async function BrowsePage() {
               return (
                 <div
                   key={app.id}
-                  className="flex h-full flex-col rounded-card border border-tan/40 bg-white/80 p-5"
+                  className="animate-fade-in flex h-full flex-col rounded-card border border-tan/40 bg-white/80 p-5 transition hover:-translate-y-0.5 hover:border-logo/60 hover:shadow-md"
                 >
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-cream text-2xl">
                     <AppIcon app={app} />
