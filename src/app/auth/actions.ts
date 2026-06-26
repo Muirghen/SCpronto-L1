@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isAllowedEmail, ALLOWED_EMAIL_DOMAIN } from "@/lib/config";
+import { emailAdminsPendingApproval } from "@/lib/notify/email";
 
 export type AuthState = { error?: string; message?: string };
 
@@ -58,6 +59,14 @@ export async function signUp(
 
   if (error) {
     return { error: error.message };
+  }
+
+  // Best-effort: email active admins that someone is waiting (no-op if email
+  // isn't configured). In-app notifications are created by a DB trigger.
+  try {
+    await emailAdminsPendingApproval({ name: fullName, email });
+  } catch {
+    /* don't let email problems block registration */
   }
 
   // New accounts start as "pending" and need an admin to approve them. If email

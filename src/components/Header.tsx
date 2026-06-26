@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
 import { Avatar } from "./Avatar";
+import { NotificationBell } from "./NotificationBell";
 import { signOut } from "@/app/auth/actions";
 
 export function Header({
@@ -43,6 +44,8 @@ export function Header({
           {isAdmin && link("/admin", "Admin", "admin")}
 
           <span className="mx-1 hidden h-5 w-px bg-tan/30 sm:inline-block" />
+
+          <NotificationBell />
 
           <Link
             href="/profile"
