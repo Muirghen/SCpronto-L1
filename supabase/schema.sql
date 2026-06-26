@@ -50,6 +50,21 @@ create table if not exists public.apps (
 alter table public.apps add column if not exists icon_url text;
 
 -- ---------------------------------------------------------------------
+-- user_apps: each user's personal library — which catalog apps they've
+-- added and in what order. One row per (user, app).
+-- ---------------------------------------------------------------------
+create table if not exists public.user_apps (
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  app_id      uuid not null references public.apps (id) on delete cascade,
+  sort_order  int  not null default 0,
+  created_at  timestamptz not null default now(),
+  primary key (user_id, app_id)
+);
+
+create index if not exists user_apps_user_order_idx
+  on public.user_apps (user_id, sort_order);
+
+-- ---------------------------------------------------------------------
 -- Helper: is the current user an admin?  (security definer avoids
 -- recursive RLS checks against the profiles table.)
 -- ---------------------------------------------------------------------
@@ -108,8 +123,9 @@ create trigger on_auth_user_created
 -- =====================================================================
 -- Row Level Security
 -- =====================================================================
-alter table public.profiles enable row level security;
-alter table public.apps     enable row level security;
+alter table public.profiles  enable row level security;
+alter table public.apps      enable row level security;
+alter table public.user_apps enable row level security;
 
 -- ---- profiles policies ----
 drop policy if exists "read own or admin reads all" on public.profiles;
@@ -137,6 +153,23 @@ create policy "active users read apps" on public.apps
 drop policy if exists "admins write apps" on public.apps;
 create policy "admins write apps" on public.apps
   for all using (public.is_admin()) with check (public.is_admin());
+
+-- ---- user_apps policies: each user owns only their own library ----
+drop policy if exists "read own library" on public.user_apps;
+create policy "read own library" on public.user_apps
+  for select using (user_id = auth.uid());
+
+drop policy if exists "add to own library" on public.user_apps;
+create policy "add to own library" on public.user_apps
+  for insert with check (user_id = auth.uid());
+
+drop policy if exists "reorder own library" on public.user_apps;
+create policy "reorder own library" on public.user_apps
+  for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "remove from own library" on public.user_apps;
+create policy "remove from own library" on public.user_apps
+  for delete using (user_id = auth.uid());
 
 -- ---------------------------------------------------------------------
 -- Guard against employees self-promoting to admin via the user-update

@@ -85,7 +85,7 @@ export async function createApp(formData: FormData) {
   if (error) throw error;
 
   revalidatePath("/admin");
-  revalidatePath("/apps");
+  revalidatePath("/browse");
 }
 
 export async function deleteApp(formData: FormData) {
@@ -96,5 +96,5 @@ export async function deleteApp(formData: FormData) {
   if (error) throw error;
 
   revalidatePath("/admin");
-  revalidatePath("/apps");
+  revalidatePath("/browse");
 }

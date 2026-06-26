@@ -9,7 +9,7 @@ export function Header({
 }: {
   isAdmin: boolean;
   email: string;
-  active: "apps" | "admin";
+  active: "library" | "browse" | "admin";
 }) {
   return (
     <header className="border-b border-tan/30 bg-cream/80 backdrop-blur">
@@ -22,12 +22,22 @@ export function Header({
           <Link
             href="/apps"
             className={`rounded-lg px-3 py-1.5 font-medium ${
-              active === "apps"
+              active === "library"
                 ? "bg-espresso text-cream"
                 : "text-espresso/70 hover:bg-tan/10"
             }`}
           >
-            Apps
+            My Library
+          </Link>
+          <Link
+            href="/browse"
+            className={`rounded-lg px-3 py-1.5 font-medium ${
+              active === "browse"
+                ? "bg-espresso text-cream"
+                : "text-espresso/70 hover:bg-tan/10"
+            }`}
+          >
+            Browse
           </Link>
           {isAdmin && (
             <Link

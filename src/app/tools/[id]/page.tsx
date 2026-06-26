@@ -38,7 +38,7 @@ export default async function ToolPage({
       <Header
         isAdmin={me?.role === "admin"}
         email={me?.email ?? ""}
-        active="apps"
+        active="library"
       />
       <main className="mx-auto max-w-6xl px-4 py-10">
         <Link href="/apps" className="text-sm font-semibold text-orange-light">
