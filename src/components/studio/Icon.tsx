@@ -38,12 +38,32 @@ export type IconName =
   | "download"
   | "newFile"
   | "calendar"
-  | "send";
+  | "send"
+  | "sparkles"
+  | "shapes"
+  | "flipH"
+  | "flipV"
+  | "swap"
+  | "alignObjLeft"
+  | "alignObjCenterX"
+  | "alignObjRight"
+  | "alignObjTop"
+  | "alignObjCenterY"
+  | "alignObjBottom";
 
-const FILLED: ReadonlySet<IconName> = new Set<IconName>(["cursor", "star"]);
+const FILLED: ReadonlySet<IconName> = new Set<IconName>(["cursor", "star", "sparkles"]);
 
 const paths: Record<IconName, React.ReactNode> = {
-  cursor: <path d="M5.5 3.3 18 11.2l-5.4 1.1 3.1 5.6-2.4 1.3-3-5.6-3.8 3.9z" />,
+  // Classic arrow pointer with a softly rounded tail — reads clearly at small
+  // sizes and matches the warm, rounded feel of the rest of the UI.
+  cursor: (
+    <path
+      d="M5.6 3.1c-.5-.2-1.1.2-1.1.8v13.9c0 .7.8 1 1.3.5l3.1-3.1 2.1 4.6c.2.5.8.7 1.3.5l1.4-.6c.5-.2.7-.8.5-1.3l-2-4.4h4.3c.7 0 1-.9.5-1.3z"
+      strokeWidth="0.6"
+      stroke="currentColor"
+      strokeLinejoin="round"
+    />
+  ),
   text: (
     <>
       <path d="M4 6.5V5h16v1.5" />
@@ -216,6 +236,82 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M21 3 10.5 13.5" />
       <path d="M21 3 14.5 21l-4-7.5L3 9.5z" />
+    </>
+  ),
+  // Elements: a four-point sparkle — "add creative content" without a plain +.
+  sparkles: (
+    <>
+      <path d="M12 3.5l1.7 4.8 4.8 1.7-4.8 1.7L12 16.5l-1.7-4.8L5.5 10l4.8-1.7z" />
+      <path d="M18 15l.8 2.2 2.2.8-2.2.8L18 21l-.8-2.2-2.2-.8 2.2-.8z" strokeWidth="1.3" />
+    </>
+  ),
+  // Overlapping square + circle — the shapes tool.
+  shapes: (
+    <>
+      <rect x="3.5" y="3.5" width="10" height="10" rx="1.6" />
+      <circle cx="15.5" cy="15.5" r="5" />
+    </>
+  ),
+  flipH: (
+    <>
+      <path d="M12 3v18" strokeDasharray="2.5 2.5" />
+      <path d="M9.5 7.5 4.5 12l5 4.5z" />
+      <path d="M14.5 7.5 19.5 12l-5 4.5z" />
+    </>
+  ),
+  flipV: (
+    <>
+      <path d="M3 12h18" strokeDasharray="2.5 2.5" />
+      <path d="M7.5 9.5 12 4.5l4.5 5z" />
+      <path d="M7.5 14.5 12 19.5l4.5-5z" />
+    </>
+  ),
+  swap: (
+    <>
+      <path d="M4 8h13l-3.2-3.2" />
+      <path d="M20 16H7l3.2 3.2" />
+    </>
+  ),
+  alignObjLeft: (
+    <>
+      <path d="M4 3.5v17" />
+      <rect x="7" y="6.5" width="11" height="4" rx="1" />
+      <rect x="7" y="13.5" width="7" height="4" rx="1" />
+    </>
+  ),
+  alignObjCenterX: (
+    <>
+      <path d="M12 3.5v17" />
+      <rect x="6.5" y="6.5" width="11" height="4" rx="1" />
+      <rect x="8.5" y="13.5" width="7" height="4" rx="1" />
+    </>
+  ),
+  alignObjRight: (
+    <>
+      <path d="M20 3.5v17" />
+      <rect x="6" y="6.5" width="11" height="4" rx="1" />
+      <rect x="10" y="13.5" width="7" height="4" rx="1" />
+    </>
+  ),
+  alignObjTop: (
+    <>
+      <path d="M3.5 4h17" />
+      <rect x="6.5" y="7" width="4" height="11" rx="1" />
+      <rect x="13.5" y="7" width="4" height="7" rx="1" />
+    </>
+  ),
+  alignObjCenterY: (
+    <>
+      <path d="M3.5 12h17" />
+      <rect x="6.5" y="6.5" width="4" height="11" rx="1" />
+      <rect x="13.5" y="8.5" width="4" height="7" rx="1" />
+    </>
+  ),
+  alignObjBottom: (
+    <>
+      <path d="M3.5 20h17" />
+      <rect x="6.5" y="6" width="4" height="11" rx="1" />
+      <rect x="13.5" y="10" width="4" height="7" rx="1" />
     </>
   ),
 };

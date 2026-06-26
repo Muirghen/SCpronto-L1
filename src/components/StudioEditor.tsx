@@ -9,6 +9,7 @@ import {
   SortableContext, arrayMove, verticalListSortingStrategy, useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { initAligningGuidelines } from "fabric/extensions";
 import Link from "next/link";
 import type { Canvas as FabricCanvas, FabricObject, TPointerEventInfo } from "fabric";
 import { Logo } from "@/components/Logo";
@@ -58,6 +59,11 @@ export function StudioEditor({
   const snapRef = useRef(false);
   const undoStack = useRef<string[]>([]);
   const redoStack = useRef<string[]>([]);
+  const guidelinesRef = useRef<null | (() => void)>(null);
+  const clipboardRef = useRef<FabricObject | null>(null);
+  const dirtyRef = useRef(false);
+  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shapesBoxRef = useRef<HTMLDivElement>(null);
 
   const [formatKey, setFormatKey] = useState<FormatKey>("ig-post");
   const [bgColor, setBgColor] = useState("#FBF4E8");
@@ -87,6 +93,11 @@ export function StudioEditor({
   const openedRef = useRef(false);
   // True while an image upload is in flight (bottom-bar button feedback).
   const [uploadingImg, setUploadingImg] = useState(false);
+  // Unsaved-changes indicator (warns before leaving).
+  const [dirty, setDirty] = useState(false);
+  // Corner radius (%) for a selected image; bottom-bar shapes popover.
+  const [imgRadius, setImgRadius] = useState(0);
+  const [shapesOpen, setShapesOpen] = useState(false);
 
   // design_id -> set of user ids it's shared with (owned designs only).
   const [shares, setShares] = useState<Record<string, string[]>>(() => {
@@ -296,6 +307,13 @@ export function StudioEditor({
     undoStack.current.push(json);
     if (undoStack.current.length > 60) undoStack.current.shift();
     redoStack.current = [];
+    dirtyRef.current = true;
+    setDirty(true);
+  }, []);
+
+  const markClean = useCallback(() => {
+    dirtyRef.current = false;
+    setDirty(false);
   }, []);
 
   const syncSelection = useCallback((obj: FabricObject | undefined) => {
@@ -318,8 +336,14 @@ export function StudioEditor({
         bold: t.fontWeight === "bold" || t.fontWeight === 700,
         align: (t.textAlign as "left" | "center" | "right") || "center",
       });
+    } else if (obj.type === "image") {
+      setSelKind("image");
+      const w = obj.width ?? 0, h = obj.height ?? 0;
+      const cp = obj.clipPath as { rx?: number } | undefined;
+      const half = Math.min(w, h) / 2;
+      setImgRadius(cp?.rx && half ? Math.round((cp.rx / half) * 100) : 0);
     } else {
-      setSelKind(obj.type === "image" ? "image" : "shape");
+      setSelKind("shape");
     }
   }, []);
 
@@ -360,12 +384,20 @@ export function StudioEditor({
         });
       });
 
+      // Smart alignment guides: snap lines when an object lines up with
+      // another object's edge/center as you drag.
+      guidelinesRef.current = initAligningGuidelines(canvas, {
+        color: "#D85A30", margin: 5, width: 1,
+      });
+
       undoStack.current = [JSON.stringify(canvas.toJSON())];
       setReady(true);
     })();
 
     return () => {
       disposed = true;
+      guidelinesRef.current?.();
+      guidelinesRef.current = null;
       fabricRef.current?.dispose();
       fabricRef.current = null;
       link.remove();
@@ -437,6 +469,20 @@ export function StudioEditor({
         if (obj && !(obj as unknown as { isEditing?: boolean }).isEditing) {
           e.preventDefault(); deleteSelected();
         }
+      } else if (mod && e.key.toLowerCase() === "c") {
+        e.preventDefault(); copySelected();
+      } else if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault(); duplicateSelected();
+      } else if (e.key.startsWith("Arrow")) {
+        const obj = fabricRef.current?.getActiveObject();
+        if (obj && !(obj as unknown as { isEditing?: boolean }).isEditing) {
+          e.preventDefault();
+          const step = e.shiftKey ? 10 : 1;
+          if (e.key === "ArrowLeft") nudge(-step, 0);
+          else if (e.key === "ArrowRight") nudge(step, 0);
+          else if (e.key === "ArrowUp") nudge(0, -step);
+          else if (e.key === "ArrowDown") nudge(0, step);
+        }
       } else if (!mod && e.key.toLowerCase() === "v") {
         setTool("select");
       } else if (!mod && e.key.toLowerCase() === "t") {
@@ -447,6 +493,48 @@ export function StudioEditor({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undo, redo]);
+
+  // Paste: an image from the clipboard uploads; otherwise paste a copied object.
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (const it of Array.from(items)) {
+          if (it.type.startsWith("image/")) {
+            const file = it.getAsFile();
+            if (file) { e.preventDefault(); uploadAndAddImage(file); return; }
+          }
+        }
+      }
+      if (clipboardRef.current) { e.preventDefault(); pasteClipboard(); }
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Warn before leaving (refresh/close) with unsaved changes.
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      if (dirtyRef.current) { e.preventDefault(); e.returnValue = ""; }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+  // Close the shapes popover when clicking outside it.
+  useEffect(() => {
+    if (!shapesOpen) return;
+    function onDown(e: MouseEvent) {
+      if (shapesBoxRef.current && !shapesBoxRef.current.contains(e.target as Node)) {
+        setShapesOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [shapesOpen]);
 
   /* ---------------- add objects ---------------- */
 
@@ -494,12 +582,11 @@ export function StudioEditor({
     add(img);
   }
 
-  // Upload the picked file to Supabase Storage, then drop the image (by URL)
-  // onto the canvas. Keeps design JSON small — no base64 blobs.
-  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  // Upload a file to Supabase Storage, then drop the image (by URL) onto the
+  // canvas. Keeps design JSON small — no base64 blobs. Shared by the bottom-bar
+  // button, drag-and-drop and paste.
+  async function uploadAndAddImage(file: File) {
+    if (!file.type.startsWith("image/")) return;
     setTool("select");
     setUploadingImg(true);
     try {
@@ -519,6 +606,18 @@ export function StudioEditor({
     } finally {
       setUploadingImg(false);
     }
+  }
+
+  function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) uploadAndAddImage(file);
+  }
+
+  function onWorkspaceDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) uploadAndAddImage(file);
   }
 
   function addShape(kind: "rect" | "circle" | "triangle" | "line" | "star") {
@@ -633,6 +732,123 @@ export function StudioEditor({
     add(cloned);
   }
 
+  // Coalesce rapid changes (e.g. arrow-key nudges) into one undo step.
+  function snapshotSoon() {
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = setTimeout(() => snapshot(), 350);
+  }
+
+  function nudge(dx: number, dy: number) {
+    const canvas = fabricRef.current, obj = activeObj();
+    if (!canvas || !obj) return;
+    obj.set({ left: (obj.left ?? 0) + dx, top: (obj.top ?? 0) + dy });
+    obj.setCoords();
+    canvas.renderAll();
+    snapshotSoon();
+  }
+
+  async function copySelected() {
+    const obj = activeObj();
+    if (!obj) return;
+    clipboardRef.current = await obj.clone();
+  }
+
+  async function pasteClipboard() {
+    const canvas = fabricRef.current, clip = clipboardRef.current;
+    if (!canvas || !clip) return;
+    const cloned = await clip.clone();
+    cloned.set({ left: (clip.left ?? 0) + 24, top: (clip.top ?? 0) + 24 });
+    // Cascade subsequent pastes so they don't stack on one spot.
+    clip.set({ left: (clip.left ?? 0) + 24, top: (clip.top ?? 0) + 24 });
+    add(cloned);
+  }
+
+  // Align the selection within the canvas using its bounding box, so it works
+  // regardless of the object's origin.
+  function alignObj(pos: "left" | "centerX" | "right" | "top" | "centerY" | "bottom") {
+    const canvas = fabricRef.current, obj = activeObj();
+    if (!canvas || !obj) return;
+    const W = canvas.getWidth(), H = canvas.getHeight();
+    const r = obj.getBoundingRect();
+    let dx = 0, dy = 0;
+    if (pos === "left") dx = -r.left;
+    else if (pos === "centerX") dx = (W - r.width) / 2 - r.left;
+    else if (pos === "right") dx = W - r.width - r.left;
+    else if (pos === "top") dy = -r.top;
+    else if (pos === "centerY") dy = (H - r.height) / 2 - r.top;
+    else if (pos === "bottom") dy = H - r.height - r.top;
+    obj.set({ left: (obj.left ?? 0) + dx, top: (obj.top ?? 0) + dy });
+    obj.setCoords();
+    canvas.renderAll();
+    snapshot();
+  }
+
+  function flip(axis: "x" | "y") {
+    const canvas = fabricRef.current, obj = activeObj();
+    if (!canvas || !obj) return;
+    if (axis === "x") obj.set("flipX", !obj.flipX);
+    else obj.set("flipY", !obj.flipY);
+    canvas.renderAll();
+    snapshot();
+  }
+
+  // Round an image's corners via a centered rounded-rect clip path.
+  function setImageRadius(pct: number) {
+    setImgRadius(pct);
+    const fabric = modRef.current, canvas = fabricRef.current, obj = activeObj();
+    if (!fabric || !canvas || !obj || obj.type !== "image") return;
+    const w = obj.width ?? 0, h = obj.height ?? 0;
+    if (pct <= 0) {
+      obj.clipPath = undefined;
+    } else {
+      const radius = (Math.min(w, h) / 2) * (pct / 100);
+      obj.clipPath = new fabric.Rect({
+        width: w, height: h, rx: radius, ry: radius,
+        originX: "center", originY: "center",
+      });
+    }
+    obj.set("dirty", true);
+    canvas.renderAll();
+    snapshot();
+  }
+
+  async function replaceImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const canvas = fabricRef.current, obj = activeObj();
+    if (!file || !canvas || !obj || obj.type !== "image") return;
+    setUploadingImg(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { url } = await uploadDesignImage(form);
+      const fabric = modRef.current;
+      if (!fabric) return;
+      const img = await fabric.FabricImage.fromURL(url, { crossOrigin: "anonymous" });
+      const displayW = (obj.width ?? 1) * (obj.scaleX ?? 1);
+      img.set({
+        left: obj.left, top: obj.top, angle: obj.angle,
+        originX: obj.originX, originY: obj.originY,
+        flipX: obj.flipX, flipY: obj.flipY,
+      });
+      img.scale(displayW / (img.width ?? displayW));
+      (img as FabricObject & { id?: string }).id =
+        (obj as FabricObject & { id?: string }).id ?? uid();
+      const idx = canvas.getObjects().indexOf(obj);
+      canvas.remove(obj);
+      canvas.add(img);
+      if (idx >= 0) canvas.moveObjectTo(img, idx);
+      canvas.setActiveObject(img);
+      canvas.renderAll();
+      syncSelection(img);
+    } catch (err) {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Couldn't replace the image.");
+    } finally {
+      setUploadingImg(false);
+    }
+  }
+
   /* ---------------- sharing ---------------- */
 
   function toggleShareUser(designId: string, userId: string) {
@@ -726,6 +942,7 @@ export function StudioEditor({
         const without = prev.filter((d) => d.id !== saved.id);
         return [saved, ...without];
       });
+      markClean();
     } finally {
       setBusy(false);
     }
@@ -741,6 +958,7 @@ export function StudioEditor({
     redoStack.current = [];
     setCurrentId(d.id);
     setDesignName(d.name);
+    markClean();
   }
 
   async function removeDesign(id: string) {
@@ -763,6 +981,7 @@ export function StudioEditor({
     undoStack.current = [JSON.stringify(canvas.toJSON())];
     redoStack.current = [];
     refreshLayers();
+    markClean();
   }
 
   async function download() {
@@ -794,7 +1013,7 @@ export function StudioEditor({
       ),
     },
     {
-      key: "elements", title: "Elements", icon: "plus",
+      key: "elements", title: "Elements", icon: "sparkles",
       body: (
         <div className="space-y-2 p-3">
           <div className="grid grid-cols-3 gap-1.5">
@@ -858,6 +1077,38 @@ export function StudioEditor({
             <ShapeFill extra={customColors} onAdd={addCustomColor}
               onPick={(c) => { const o = activeObj(); o?.set("fill", c); fabricRef.current?.renderAll(); snapshot(); }} />
           )}
+          {selKind === "image" && (
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap gap-1.5">
+                <ToolButton onClick={() => flip("x")} variant="ghost"><Icon name="flipH" size={15} /> Flip H</ToolButton>
+                <ToolButton onClick={() => flip("y")} variant="ghost"><Icon name="flipV" size={15} /> Flip V</ToolButton>
+                <label className="flex cursor-pointer items-center justify-center gap-1 rounded-lg border border-tan/50 px-2 py-1.5 text-xs font-semibold text-espresso/70 transition hover:bg-tan/10">
+                  <Icon name="swap" size={15} /> Replace
+                  <input type="file" accept="image/*" className="hidden" onChange={replaceImage} />
+                </label>
+              </div>
+              <label className="block text-[11px] font-medium text-espresso/70">
+                Rounded corners — {imgRadius}%
+                <input type="range" min={0} max={100} value={imgRadius}
+                  onChange={(e) => setImageRadius(Number(e.target.value))}
+                  className="mt-1 w-full accent-logo" />
+              </label>
+            </div>
+          )}
+          <div className="mt-2.5">
+            <span className="mb-1 block text-[11px] font-medium text-espresso/70">Align to canvas</span>
+            <div className="flex gap-1">
+              {([
+                ["alignObjLeft", "left"], ["alignObjCenterX", "centerX"], ["alignObjRight", "right"],
+                ["alignObjTop", "top"], ["alignObjCenterY", "centerY"], ["alignObjBottom", "bottom"],
+              ] as const).map(([icon, pos]) => (
+                <button key={pos} title={`Align ${pos}`} onClick={() => alignObj(pos)}
+                  className="flex flex-1 items-center justify-center rounded border border-tan/50 py-1.5 text-espresso/70 transition hover:border-logo hover:bg-logo/5">
+                  <Icon name={icon} size={16} />
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="mt-2.5 block text-[11px] font-medium text-espresso/70">
             Opacity — {opacity}%
             <input type="range" min={10} max={100} value={opacity}
@@ -937,6 +1188,11 @@ export function StudioEditor({
       {/* ---- top toolbar ---- */}
       <div className="flex items-center gap-1.5 border-b border-tan/30 bg-cream/90 px-2 py-1.5">
         <Link href="/studio" title="Back to Studio"
+          onClick={(e) => {
+            if (dirtyRef.current && !window.confirm("Leave without saving? Your changes will be lost.")) {
+              e.preventDefault();
+            }
+          }}
           className="mr-1 flex items-center rounded px-1.5 py-1 transition hover:bg-tan/15">
           <Logo size={22} />
         </Link>
@@ -961,9 +1217,10 @@ export function StudioEditor({
           className="flex items-center gap-1.5 rounded border border-tan/40 px-2.5 py-1 text-xs font-semibold text-espresso/70 hover:bg-tan/10">
           <Icon name="newFile" size={16} /> New
         </button>
-        <button onClick={doSave} disabled={busy} title="Save design"
+        <button onClick={doSave} disabled={busy} title={dirty ? "Unsaved changes" : "Save design"}
           className="flex items-center gap-1.5 rounded bg-espresso px-3 py-1 text-xs font-semibold text-cream hover:bg-espresso/90 disabled:opacity-60">
           <Icon name="save" size={16} /> {busy ? "Saving…" : "Save"}
+          {dirty && !busy && <span className="h-1.5 w-1.5 rounded-full bg-orange-dark" />}
         </button>
         <button onClick={download} title="Export PNG"
           className="flex items-center gap-1.5 rounded bg-logo px-3 py-1 text-xs font-bold text-cream hover:bg-orange-light">
@@ -975,6 +1232,7 @@ export function StudioEditor({
       <div className="relative min-h-0 flex-1 overflow-hidden bg-[#E2D8C6]">
         {/* workspace fills the area; panels float above it */}
         <div ref={workspaceRef} onMouseDown={onWorkspaceMouseDown}
+          onDragOver={(e) => e.preventDefault()} onDrop={onWorkspaceDrop}
           className="absolute inset-0 flex items-center justify-center overflow-hidden">
           <div style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: "center center" }}>
             <div className="rounded-md bg-white p-2 shadow-xl ring-1 ring-black/5">
@@ -1056,6 +1314,28 @@ export function StudioEditor({
             )}
             <input type="file" accept="image/*" className="hidden" onChange={onUpload} disabled={uploadingImg} />
           </label>
+          <div ref={shapesBoxRef} className="relative">
+            <button
+              title="Shapes" aria-label="Shapes" aria-expanded={shapesOpen}
+              onClick={() => setShapesOpen((v) => !v)}
+              className={`flex h-11 w-11 items-center justify-center rounded-xl transition ${
+                shapesOpen ? "bg-logo/15 text-orange-light" : "text-espresso/70 hover:bg-tan/20 hover:text-espresso"
+              }`}
+            >
+              <Icon name="shapes" size={22} />
+            </button>
+            {shapesOpen && (
+              <div className="absolute bottom-14 left-1/2 flex -translate-x-1/2 gap-1 rounded-xl border border-tan/30 bg-cream/95 p-1.5 shadow-lg">
+                {(["rect", "circle", "triangle", "star", "line"] as const).map((kind) => (
+                  <button key={kind} title={`Add ${kind}`}
+                    onClick={() => { addShape(kind); setShapesOpen(false); }}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-espresso/70 transition hover:bg-tan/20 hover:text-espresso">
+                    <Icon name={kind} size={20} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
