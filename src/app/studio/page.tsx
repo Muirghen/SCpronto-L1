@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Header } from "@/components/Header";
 import { StudioEditor } from "@/components/StudioEditor";
-import type { Profile } from "@/lib/types";
+import type { Design, Profile } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +20,13 @@ export default async function StudioPage() {
     .single<Profile>();
 
   if (profile?.status === "disabled") redirect("/apps");
+
+  const { data: designs } = await supabase
+    .from("designs")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
+    .returns<Design[]>();
 
   return (
     <div className="min-h-screen">
@@ -40,7 +47,7 @@ export default async function StudioPage() {
           </p>
         </div>
 
-        <StudioEditor />
+        <StudioEditor initialDesigns={designs ?? []} />
       </main>
     </div>
   );

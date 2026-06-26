@@ -65,6 +65,22 @@ create index if not exists user_apps_user_order_idx
   on public.user_apps (user_id, sort_order);
 
 -- ---------------------------------------------------------------------
+-- designs: saved Social Studio designs, one row per saved canvas.
+-- ---------------------------------------------------------------------
+create table if not exists public.designs (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references auth.users (id) on delete cascade,
+  name         text not null,
+  format_key   text not null default 'ig-post',
+  data         jsonb not null,
+  updated_at   timestamptz not null default now(),
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists designs_user_idx
+  on public.designs (user_id, updated_at desc);
+
+-- ---------------------------------------------------------------------
 -- Helper: is the current user an admin?  (security definer avoids
 -- recursive RLS checks against the profiles table.)
 -- ---------------------------------------------------------------------
@@ -126,6 +142,7 @@ create trigger on_auth_user_created
 alter table public.profiles  enable row level security;
 alter table public.apps      enable row level security;
 alter table public.user_apps enable row level security;
+alter table public.designs   enable row level security;
 
 -- ---- profiles policies ----
 drop policy if exists "read own or admin reads all" on public.profiles;
@@ -170,6 +187,11 @@ create policy "reorder own library" on public.user_apps
 drop policy if exists "remove from own library" on public.user_apps;
 create policy "remove from own library" on public.user_apps
   for delete using (user_id = auth.uid());
+
+-- ---- designs policies: each user owns only their own saved designs ----
+drop policy if exists "manage own designs" on public.designs;
+create policy "manage own designs" on public.designs
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- ---------------------------------------------------------------------
 -- Guard against employees self-promoting to admin via the user-update

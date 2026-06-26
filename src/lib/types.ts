@@ -11,6 +11,16 @@ export type Profile = {
   created_at: string;
 };
 
+export type Design = {
+  id: string;
+  user_id: string;
+  name: string;
+  format_key: string;
+  data: unknown;
+  updated_at: string;
+  created_at: string;
+};
+
 export type AppTile = {
   id: string;
   name: string;
