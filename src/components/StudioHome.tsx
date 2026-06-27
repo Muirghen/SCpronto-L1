@@ -66,8 +66,8 @@ export function StudioHome({
           <AppCard
             icon="calendar"
             title="Scheduler"
-            desc="Plan a content calendar and queue your designs to go out automatically."
-            soon
+            desc="Plan a content calendar and queue your designs for Instagram, Facebook and X."
+            href="/scheduler"
           />
           <AppCard
             icon="send"

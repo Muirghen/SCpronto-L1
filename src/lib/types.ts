@@ -22,6 +22,22 @@ export type Design = {
   created_at: string;
 };
 
+export type Channel = "instagram" | "facebook" | "x";
+export type PostStatus = "draft" | "scheduled" | "posted";
+
+export type ScheduledPost = {
+  id: string;
+  user_id: string;
+  channel: Channel;
+  caption: string;
+  design_id: string | null;
+  image_url: string | null;
+  scheduled_at: string;
+  status: PostStatus;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AppTile = {
   id: string;
   name: string;
