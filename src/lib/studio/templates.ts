@@ -98,11 +98,11 @@ export const STARTERS: Starter[] = [
     bg: "#3A1A0E",
     els: [
       { t: "logo", x: 0.5, y: 0.135, w: 0.13 },
-      { t: "rect", x: 0.5, y: 0.30, w: 0.34, h: 0.072, fill: "#D85A30", rx: 999 },
-      { t: "text", x: 0.5, y: 0.30, w: 0.32, text: "LIMITED TIME", size: 0.032, font: "Montserrat", fill: "#FBF4E8", align: "center", bold: true },
-      { t: "text", x: 0.5, y: 0.475, w: 0.92, text: "BIG SALE", size: 0.215, font: "Bebas Neue", fill: "#FBF4E8", align: "center" },
-      { t: "rect", x: 0.5, y: 0.60, w: 0.14, h: 0.006, fill: "#E8743F" },
-      { t: "text", x: 0.5, y: 0.685, w: 0.82, text: "Up to 50% off — this week only", size: 0.045, font: "Montserrat", fill: "#C9A06A", align: "center" },
+      { t: "rect", x: 0.5, y: 0.28, w: 0.34, h: 0.072, fill: "#D85A30", rx: 999 },
+      { t: "text", x: 0.5, y: 0.28, w: 0.32, text: "LIMITED TIME", size: 0.032, font: "Montserrat", fill: "#FBF4E8", align: "center", bold: true },
+      { t: "text", x: 0.5, y: 0.48, w: 0.96, text: "BIG SALE", size: 0.17, font: "Bebas Neue", fill: "#FBF4E8", align: "center" },
+      { t: "rect", x: 0.5, y: 0.61, w: 0.14, h: 0.006, fill: "#E8743F" },
+      { t: "text", x: 0.5, y: 0.69, w: 0.82, text: "Up to 50% off — this week only", size: 0.045, font: "Montserrat", fill: "#C9A06A", align: "center" },
     ],
   },
   {
