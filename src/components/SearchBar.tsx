@@ -11,7 +11,7 @@ export function SearchBar({
   placeholder?: string;
 }) {
   return (
-    <div className="relative mb-6 max-w-md">
+    <div className="relative w-full">
       <svg
         className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-tan"
         width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"

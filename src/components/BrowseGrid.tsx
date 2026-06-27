@@ -26,7 +26,9 @@ export function BrowseGrid({
 
   return (
     <div>
-      <SearchBar value={query} onChange={setQuery} placeholder="Search the catalog…" />
+      <div className="mb-6 max-w-md">
+        <SearchBar value={query} onChange={setQuery} placeholder="Search the catalog…" />
+      </div>
 
       {visible.length === 0 ? (
         <div className="rounded-card border border-dashed border-tan/60 bg-white/50 p-12 text-center">

@@ -107,16 +107,6 @@ export function StudioEditor({
   const [stickersOpen, setStickersOpen] = useState(false);
   const stickersBoxRef = useRef<HTMLDivElement>(null);
   const [panning, setPanning] = useState(false);
-  // Vertical-monitor mode: narrower side panels so a portrait screen leaves
-  // more room for the canvas. Defaults on when the screen is taller than wide.
-  const [vertical, setVertical] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(orientation: portrait)");
-    setVertical(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setVertical(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
 
   // design_id -> set of user ids it's shared with (owned designs only).
   const [shares, setShares] = useState<Record<string, string[]>>(() => {
@@ -1256,7 +1246,6 @@ export function StudioEditor({
         <span className="mx-1 h-5 w-px bg-tan/30" />
         <TopBtn onClick={() => setShowGrid((v) => !v)} title="Grid" active={showGrid}><Icon name="grid" size={18} /></TopBtn>
         <TopBtn onClick={() => setSnap((v) => !v)} title="Snap to grid" active={snap}><Icon name="magnet" size={18} /></TopBtn>
-        <TopBtn onClick={() => setVertical((v) => !v)} title="Vertical-monitor layout" active={vertical}><Icon name="layoutVertical" size={18} /></TopBtn>
         <span className="mx-1 h-5 w-px bg-tan/30" />
         <select value={formatKey} onChange={(e) => setFormatKey(e.target.value as FormatKey)}
           className="rounded border border-tan/40 bg-white px-2 py-1 text-xs text-espresso focus:border-logo focus:outline-none">
@@ -1321,7 +1310,7 @@ export function StudioEditor({
         </div>
 
         {/* open panels stack in a column so they never overlap */}
-        <div className={`no-scrollbar pointer-events-none absolute left-[4.5rem] top-3 z-20 flex max-h-[calc(100%-1.5rem)] flex-col gap-2 overflow-y-auto pb-2 ${vertical ? "w-52" : "w-60"}`}>
+        <div className="no-scrollbar pointer-events-none absolute left-[4.5rem] top-3 z-20 flex max-h-[calc(100%-1.5rem)] flex-col gap-2 overflow-y-auto pb-2">
           {panels.filter((p) => openPanels[p.key]).map((p) => (
             <FloatingPanel key={p.key} title={p.title} icon={p.icon} onClose={() => closePanel(p.key)}>
               {p.body}
@@ -1330,7 +1319,7 @@ export function StudioEditor({
         </div>
 
         {/* right column: Properties / Text (contextual) above Layers (always) */}
-        <div className={`no-scrollbar pointer-events-none absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] flex-col gap-2 overflow-y-auto pb-2 ${vertical ? "w-52" : "w-60"}`}>
+        <div className="no-scrollbar pointer-events-none absolute right-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] w-60 flex-col gap-2 overflow-y-auto pb-2">
           {(selKind || tool === "text") && (
             <FloatingPanel title={propTitle} icon="sliders">
               {propertiesBody}
@@ -1512,7 +1501,7 @@ function FloatingPanel({
   title: string; icon?: IconName; onClose?: () => void; children: React.ReactNode;
 }) {
   return (
-    <div className="animate-fade-in pointer-events-auto w-full shrink-0 overflow-hidden rounded-xl border border-tan/30 bg-cream/95 shadow-xl backdrop-blur">
+    <div className="animate-fade-in pointer-events-auto w-60 shrink-0 overflow-hidden rounded-xl border border-tan/30 bg-cream/95 shadow-xl backdrop-blur">
       <div className="flex items-center justify-between border-b border-tan/20 px-3 py-2">
         <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-espresso/70">
           {icon && <Icon name={icon} size={14} />}{title}
