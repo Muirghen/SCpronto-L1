@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { emailUserApproved } from "@/lib/notify/email";
 import type { Role, Status } from "@/lib/types";
 
 async function requireAdmin() {
@@ -51,11 +52,31 @@ export async function setStatus(formData: FormData) {
     throw new Error("You can't disable your own account.");
   }
 
+  // Look up the prior status (and contact details) so we only email the user
+  // on a real transition into "active".
+  const { data: before } = await supabase
+    .from("profiles")
+    .select("email, full_name, status")
+    .eq("id", targetId)
+    .single();
+
   const { error } = await supabase
     .from("profiles")
     .update({ status })
     .eq("id", targetId);
   if (error) throw error;
+
+  if (status === "active" && before && before.status !== "active") {
+    // Best-effort; don't block the admin action if email fails.
+    try {
+      await emailUserApproved({
+        name: before.full_name ?? "",
+        email: before.email,
+      });
+    } catch {
+      /* ignore email errors */
+    }
+  }
 
   revalidatePath("/admin");
 }

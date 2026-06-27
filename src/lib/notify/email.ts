@@ -58,6 +58,44 @@ export async function emailAdminsPendingApproval(newUser: {
   });
 }
 
+/**
+ * Best-effort confirmation email to a user once an admin approves their
+ * account (status pending/disabled -> active). No-op if RESEND_API_KEY /
+ * NOTIFY_FROM_EMAIL aren't set, so approval still works without email.
+ */
+export async function emailUserApproved(user: {
+  name: string;
+  email: string;
+}): Promise<void> {
+  const resendKey = process.env.RESEND_API_KEY;
+  const from = process.env.NOTIFY_FROM_EMAIL;
+  if (!resendKey || !from || !user.email) return;
+
+  const site = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  const name = user.name || user.email;
+  const cta = site
+    ? `<p><a href="${site}/studio">Open SC Pronto →</a></p>`
+    : "";
+
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${resendKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [user.email],
+      subject: "Your SC Pronto account is approved",
+      html:
+        `<p>Hi ${escapeHtml(name)},</p>` +
+        `<p>Your SC Pronto account has been approved. You can now sign in ` +
+        `and start using the portal.</p>` +
+        cta,
+    }),
+  });
+}
+
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!),
