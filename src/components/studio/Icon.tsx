@@ -51,7 +51,8 @@ export type IconName =
   | "alignObjCenterY"
   | "alignObjBottom"
   | "smiley"
-  | "check";
+  | "check"
+  | "layoutVertical";
 
 const FILLED: ReadonlySet<IconName> = new Set<IconName>(["cursor", "star", "sparkles"]);
 
@@ -324,6 +325,12 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   check: <path d="M5 12.5 10 17.5 19 6.5" strokeWidth="2.2" />,
+  layoutVertical: (
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="2.5" />
+      <path d="M3.5 8.5h17" />
+    </>
+  ),
 };
 
 export function Icon({

@@ -22,12 +22,21 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { AppTile } from "@/lib/types";
 import { AppIcon } from "@/components/AppIcon";
+import { SearchBar } from "@/components/SearchBar";
 import { reorderLibrary } from "@/app/apps/actions";
 
 export function LibraryGrid({ apps }: { apps: AppTile[] }) {
   const [items, setItems] = useState(apps);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [, startTransition] = useTransition();
+
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? items.filter((a) =>
+        `${a.name} ${a.description ?? ""}`.toLowerCase().includes(q),
+      )
+    : items;
 
   // Set when a drag just finished so the click that follows pointer-up doesn't
   // open the app. Cleared once consumed (or after a short timeout as a guard).
@@ -75,27 +84,37 @@ export function LibraryGrid({ apps }: { apps: AppTile[] }) {
   const activeApp = items.find((a) => a.id === activeId) ?? null;
 
   return (
-    <DndContext
-      id="library-dnd"
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragCancel={() => setActiveId(null)}
-    >
-      <SortableContext items={items.map((a) => a.id)} strategy={rectSortingStrategy}>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {items.map((app) => (
-            <SortableCard key={app.id} app={app} onCardClick={onCardClick} />
-          ))}
-        </div>
-      </SortableContext>
+    <div>
+      <SearchBar value={query} onChange={setQuery} placeholder="Search your library…" />
 
-      {/* The lifted card follows the cursor while dragging. */}
-      <DragOverlay>
-        {activeApp ? <CardFace app={activeApp} dragging /> : null}
-      </DragOverlay>
-    </DndContext>
+      {visible.length === 0 ? (
+        <p className="rounded-card border border-dashed border-tan/60 bg-white/50 p-8 text-center text-espresso/60">
+          {q ? `No apps match “${query.trim()}”.` : "Your library is empty."}
+        </p>
+      ) : (
+        <DndContext
+          id="library-dnd"
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveId(null)}
+        >
+          <SortableContext items={visible.map((a) => a.id)} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {visible.map((app) => (
+                <SortableCard key={app.id} app={app} onCardClick={onCardClick} />
+              ))}
+            </div>
+          </SortableContext>
+
+          {/* The lifted card follows the cursor while dragging. */}
+          <DragOverlay>
+            {activeApp ? <CardFace app={activeApp} dragging /> : null}
+          </DragOverlay>
+        </DndContext>
+      )}
+    </div>
   );
 }
 
