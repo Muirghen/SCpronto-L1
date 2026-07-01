@@ -23,7 +23,7 @@ export type Design = {
 };
 
 export type Channel = "instagram" | "facebook" | "x";
-export type PostStatus = "draft" | "scheduled" | "posted";
+export type PostStatus = "draft" | "scheduled" | "posted" | "failed";
 
 export type ScheduledPost = {
   id: string;
@@ -34,7 +34,18 @@ export type ScheduledPost = {
   image_url: string | null;
   scheduled_at: string;
   status: PostStatus;
+  fb_post_id: string | null;
+  ig_post_id: string | null;
+  error: string | null;
   created_at: string;
+  updated_at: string;
+};
+
+export type SocialAccount = {
+  id: number;
+  fb_page_id: string | null;
+  fb_page_access_token: string | null;
+  ig_user_id: string | null;
   updated_at: string;
 };
 

@@ -4,12 +4,13 @@ import { Header } from "@/components/Header";
 import { AppIcon } from "@/components/AppIcon";
 import { Avatar } from "@/components/Avatar";
 import { Field, Button } from "@/components/ui";
-import type { AppTile, Profile } from "@/lib/types";
+import type { AppTile, Profile, SocialAccount } from "@/lib/types";
 import {
   setRole,
   setStatus,
   createApp,
   deleteApp,
+  saveSocialAccount,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,12 @@ export default async function AdminPage() {
     .select("*")
     .order("sort_order", { ascending: true })
     .returns<AppTile[]>();
+
+  const { data: social } = await supabase
+    .from("social_accounts")
+    .select("*")
+    .eq("id", 1)
+    .maybeSingle<SocialAccount>();
 
   return (
     <div className="min-h-screen">
@@ -306,6 +313,55 @@ export default async function AdminPage() {
               </Button>
             </form>
           </div>
+        </section>
+
+        {/* ---------------- Social publishing ---------------- */}
+        <section>
+          <h2 className="mb-1 font-serif text-xl font-semibold text-espresso">
+            Social publishing
+          </h2>
+          <p className="mb-4 text-sm text-espresso/60">
+            One Facebook Page and Instagram Business account, shared by the
+            whole team for the Scheduler. Create a Meta app at{" "}
+            <span className="font-medium">developers.facebook.com</span>,
+            generate a long-lived Page access token with{" "}
+            <code className="rounded bg-tan/15 px-1">pages_manage_posts</code>,{" "}
+            <code className="rounded bg-tan/15 px-1">pages_read_engagement</code>{" "}
+            and <code className="rounded bg-tan/15 px-1">instagram_content_publish</code>{" "}
+            scopes, then paste the values below.
+          </p>
+          <form
+            action={saveSocialAccount}
+            className="grid gap-3 rounded-card border border-tan/40 bg-white/70 p-5 sm:grid-cols-3"
+          >
+            <Field
+              label="Facebook Page ID"
+              name="fb_page_id"
+              defaultValue={social?.fb_page_id ?? ""}
+              placeholder="1234567890"
+            />
+            <Field
+              label="Instagram Business Account ID"
+              name="ig_user_id"
+              defaultValue={social?.ig_user_id ?? ""}
+              placeholder="1789..."
+            />
+            <Field
+              label="Page access token"
+              name="fb_page_access_token"
+              type="password"
+              defaultValue={social?.fb_page_access_token ?? ""}
+              placeholder="EAAG..."
+            />
+            <div className="sm:col-span-3">
+              <Button type="submit">Save credentials</Button>
+              {social?.updated_at && (
+                <span className="ml-3 text-xs text-espresso/50">
+                  Last updated {new Date(social.updated_at).toLocaleString()}
+                </span>
+              )}
+            </div>
+          </form>
         </section>
       </main>
     </div>

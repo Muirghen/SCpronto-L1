@@ -109,6 +109,26 @@ export async function createApp(formData: FormData) {
   revalidatePath("/browse");
 }
 
+export async function saveSocialAccount(formData: FormData) {
+  const { supabase } = await requireAdmin();
+
+  const fb_page_id = String(formData.get("fb_page_id") ?? "").trim() || null;
+  const fb_page_access_token =
+    String(formData.get("fb_page_access_token") ?? "").trim() || null;
+  const ig_user_id = String(formData.get("ig_user_id") ?? "").trim() || null;
+
+  const { error } = await supabase.from("social_accounts").upsert({
+    id: 1,
+    fb_page_id,
+    fb_page_access_token,
+    ig_user_id,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+
+  revalidatePath("/admin");
+}
+
 export async function deleteApp(formData: FormData) {
   const { supabase } = await requireAdmin();
   const id = String(formData.get("app_id"));

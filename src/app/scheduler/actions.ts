@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validatePost, isChannelKey } from "@/lib/scheduler/channels";
+import { publishScheduledPost } from "@/lib/social/publish";
 import type { PostStatus, ScheduledPost } from "@/lib/types";
 
 async function requireUser() {
@@ -78,6 +79,31 @@ export async function setPostStatus(
     .eq("id", id)
     .eq("user_id", userId);
   if (error) throw error;
+  revalidatePath("/scheduler");
+}
+
+/**
+ * Publish a post to its channel right now (Facebook/Instagram only — X
+ * isn't connected yet). Looks up the shared org credentials via a
+ * security-definer RPC so no employee needs direct access to the token.
+ */
+export async function publishPost(id: string): Promise<void> {
+  const { supabase, userId } = await requireUser();
+  const { data: post, error } = await supabase
+    .from("scheduled_posts")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .single<ScheduledPost>();
+  if (error) throw error;
+
+  const { data: creds } = await supabase.rpc("social_credentials").single<{
+    fb_page_id: string | null;
+    fb_page_access_token: string | null;
+    ig_user_id: string | null;
+  }>();
+
+  await publishScheduledPost(supabase, post, creds ?? null);
   revalidatePath("/scheduler");
 }
 

@@ -13,7 +13,7 @@ import {
   validatePost,
   type Channel,
 } from "@/lib/scheduler/channels";
-import { savePost, deletePost, setPostStatus } from "@/app/scheduler/actions";
+import { savePost, deletePost, setPostStatus, publishPost } from "@/app/scheduler/actions";
 import { uploadDesignImage } from "@/app/studio/actions";
 import type { Design, ScheduledPost } from "@/lib/types";
 
@@ -279,6 +279,7 @@ function PostRow({
   onChange: (next: (prev: ScheduledPost[]) => ScheduledPost[]) => void;
 }) {
   const [pending, start] = useTransition();
+  const router = useRouter();
   const cfg = CHANNEL_CONFIG[post.channel];
   const when = new Date(post.scheduled_at).toLocaleString(undefined, {
     weekday: "short",
@@ -320,12 +321,35 @@ function PostRow({
               Posted
             </span>
           )}
+          {post.status === "failed" && (
+            <span className="text-[10px] font-semibold uppercase text-red-600">
+              Failed
+            </span>
+          )}
         </div>
         <p className="mt-0.5 truncate text-sm text-espresso/80">
           {post.caption || <span className="text-tan">No caption</span>}
         </p>
+        {post.error && (
+          <p className="mt-0.5 truncate text-xs text-red-600">{post.error}</p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {post.status !== "posted" && (post.channel === "facebook" || post.channel === "instagram") && (
+          <button
+            disabled={pending}
+            onClick={() =>
+              start(async () => {
+                await publishPost(post.id);
+                router.refresh();
+              })
+            }
+            title="Publish now"
+            className="rounded-lg p-1.5 text-tan transition hover:bg-logo/10 hover:text-orange-light"
+          >
+            <Icon name="send" size={16} />
+          </button>
+        )}
         {post.status !== "posted" && (
           <button
             disabled={pending}
